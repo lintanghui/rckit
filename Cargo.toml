@@ -1,0 +1,13 @@
+[package]
+name = "rckit"
+version = "0.1.0"
+authors = ["lintanghui <lintanghui@bilibili.com>"]
+
+[dependencies]
+clap="2.23.0"
+[lib]
+name="cluster"
+path="src/create.rs"
+[[bin]]
+name="rckit"
+path="bin/main.rs"
