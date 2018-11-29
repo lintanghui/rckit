@@ -1,6 +1,8 @@
+#![feature(vec_remove_item)]
 use std::collections::HashMap;
 use std::io;
 use std::result;
+
 #[test]
 fn test_cluster() {
     let mut addrs: Vec<&[u8]> = Vec::new();
@@ -15,8 +17,8 @@ fn test_cluster() {
 
     let mut cluster = Cluster::new(addrs, 4, 4).unwrap();
     cluster.init_slots();
-    assert_eq!(cluster.master.unwrap().len(), 4);
-    assert_eq!(cluster.slots.unwrap().len(), 4);
+    assert_eq!(cluster.master.len(), 4);
+    assert_eq!(cluster.slots.len(), 4);
 }
 #[test]
 fn test_split_slots() {
@@ -66,7 +68,7 @@ fn test_spread() {
     };
     map.insert("11", vec![node1, node2]);
     map.insert("13", vec![node3, node4]);
-    let mut target = spread(map, 3).unwrap();
+    let mut target = spread(&map, 3).unwrap();
     assert_eq!(target.len(), 3);
     println!("{:?}", target.pop());
     println!("{:?}", target.pop());
@@ -79,9 +81,9 @@ pub struct Cluster {
     nodes: Vec<Node>,
     master_count: usize,
     slave_count: usize,
-    slots: Option<Vec<Chunk>>,
-    master: Option<Vec<Node>>,
-    slaveof: Option<String>,
+    slots: Vec<Chunk>,
+    master: Vec<Node>,
+    slave: Vec<Node>,
 }
 
 const CLUSTER_SLOTS: usize = 16384;
@@ -101,9 +103,9 @@ impl Cluster {
             nodes,
             master_count,
             slave_count,
-            slots: None,
-            master: None,
-            slaveof: None,
+            slots: vec![],
+            master: vec![],
+            slave: vec![],
         };
         if master_count == 0 {
             master_count = cluster.nodes.len() / (slave_count + 1);
@@ -119,11 +121,37 @@ impl Cluster {
     pub fn init_slots(&mut self) {
         let mut ips = HashMap::new();
         for n in &self.nodes {
-            let key = &*n.ip;
-            ips.entry(key).or_insert(vec![]).push(n.clone());
+            ips.entry(key.clone()).or_insert(vec![]).push(n.clone());
         }
-        self.master = spread(ips, self.master_count);
-        self.slots = slpit_slots(CLUSTER_SLOTS, self.master_count);
+        self.master = spread(&ips, self.master_count).unwrap();
+        self.slots = slpit_slots(CLUSTER_SLOTS, self.master_count).unwrap();
+        let slaves = spread(&ips, self.nodes.len() - self.master_count).unwrap();
+        self.distribute_slave(slaves);
+    }
+
+    fn distribute_slave(&mut self, slaves: Vec<Node>) {
+        let mut inuse = HashMap::new();
+        loop {
+            for master in &self.master {
+                for slave in &slaves {
+                    if master.ip == slave.ip {
+                        continue;
+                    }
+                    let mut key = String::from(slave.ip.clone());
+                    if inuse.contains_key(&key) {
+                        continue;
+                    }
+                    inuse.insert(key, slave);
+                    let mut slaveof = String::from(master.ip.clone() + &master.port);
+                    let mut s = Node {
+                        ip: slave.ip.clone(),
+                        port: slave.port.clone(),
+                        slave: Some(slaveof),
+                    };
+                    self.slave.push(s);
+                }
+            }
+        }
     }
 }
 pub fn slpit_slots(n: usize, m: usize) -> Option<Vec<Chunk>> {
@@ -143,7 +171,7 @@ impl PartialEq for Chunk {
         self.0 == other.0 && self.1 == other.1
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     ip: String,
     port: String,
@@ -182,10 +210,10 @@ fn divide(n: usize, m: usize) -> Vec<usize> {
     c
 }
 
-fn spread(nodes: HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {
+fn spread(nodes: &HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {
     let target = nodes
         .into_iter()
-        .map(|(_, v)| v)
+        .map(|(_, v)| v.clone())
         .flatten()
         .take(n)
         .collect();
