@@ -1,8 +1,8 @@
 #![feature(vec_remove_item)]
+use cluster::Conn;
 use std::collections::HashMap;
 use std::io;
 use std::result;
-
 #[test]
 fn test_cluster() {
     let mut addrs: Vec<&[u8]> = Vec::new();
@@ -136,7 +136,11 @@ impl Cluster {
         };
         self.distribute_slave(slaves);
     }
-
+    pub fn add_slots(&self) {
+        for node in self.master {
+            let conn = Conn::new(node.ip, node.port);
+        }
+    }
     fn distribute_slave(&mut self, slaves: Vec<Node>) {
         let mut inuse = HashMap::new();
         loop {
@@ -224,6 +228,16 @@ fn divide(n: usize, m: usize) -> Vec<usize> {
 
 fn spread(nodes: &mut HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {
     let mut target: Vec<Node> = Vec::new();
+    let len = {
+        let mut len: usize = 0;
+        for (_, v) in nodes.into_iter() {
+            len = len + v.len()
+        }
+        len
+    };
+    if len < n {
+        return None;
+    }
     loop {
         for (_, v) in nodes.into_iter() {
             if target.len() >= n {

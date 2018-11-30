@@ -5,9 +5,10 @@ authors = ["lintanghui <lintanghui@bilibili.com>"]
 
 [dependencies]
 clap="2.23.0"
+redis="0.9.0"
 [lib]
 name="cluster"
-path="src/create.rs"
+path="src/lib.rs"
 [[bin]]
 name="rckit"
 path="bin/main.rs"
