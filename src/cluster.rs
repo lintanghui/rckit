@@ -11,7 +11,7 @@ fn test_conn_add_slots() {
 }
 impl Conn {
     pub fn new(ip: String, port: String) -> Conn {
-        let addr = "redis://".to_string() + &ip + &port;
+        let addr = "redis://".to_string() + &ip + ":" + &port;
         let client = redis::Client::open(&*addr).unwrap();
         Conn {
             ip,
@@ -25,7 +25,7 @@ impl Conn {
             .arg("addslots")
             .arg(slots)
             .query(&con)
-            .unwrap();
+            .expect("add slots err");
     }
     pub fn set_config_epoch(&self, epoch: usize) {
         let con = self.client.get_connection().unwrap();
@@ -33,7 +33,7 @@ impl Conn {
             .arg("SET-CONFIG-EPOCH")
             .arg(epoch)
             .query(&con)
-            .unwrap();
+            .expect("set config epoch err");
     }
     pub fn meet(&self, ip: &str, port: &str) {
         let con = self.client.get_connection().unwrap();

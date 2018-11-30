@@ -34,7 +34,14 @@ pub fn run() {
         let slave_count = clap::value_t!(sub_m.value_of("replicate"), usize).unwrap();
         let mut master_count = clap::value_t!(sub_m.value_of("master"), usize).unwrap();
         let node: Vec<&str> = sub_m.values_of("node").unwrap().collect();
+        println!(
+            "create cluster with replicate {} node{:?}",
+            slave_count, &node
+        );
         let mut cluster = Cluster::new(node, master_count, slave_count).unwrap();
         cluster.init_slots();
+        cluster.add_slots();
+        cluster.set_config_epoch();
+        cluster.join_cluster();
     }
 }

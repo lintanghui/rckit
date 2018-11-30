@@ -115,7 +115,7 @@ impl Cluster {
         if master_count == 0 {
             master_count = cluster.nodes.len() / (slave_count + 1);
         }
-        if master_count <= 3 {
+        if master_count < 3 {
             Err(Error::BadCluster)
         } else {
             cluster.master_count = master_count;
@@ -130,10 +130,11 @@ impl Cluster {
                 let key = &*n.ip;
                 ips.entry(key).or_insert(vec![]).push(n.clone());
             }
-            self.master = spread(&mut ips, self.master_count).unwrap();
+            self.master = spread(&mut ips, self.master_count).expect("spread master err");
             self.slots = slpit_slots(CLUSTER_SLOTS, self.master_count).unwrap();
             spread(&mut ips, self.nodes.len() - self.master_count).unwrap()
         };
+        println!("master {:?} slots{:?}", self.master, self.slots);
         self.distribute_slave(slaves);
     }
 
@@ -167,9 +168,9 @@ impl Cluster {
         loop {
             for master in &self.master {
                 for slave in &slaves {
-                    if master.ip == slave.ip {
-                        continue;
-                    }
+                    // if master.ip == slave.ip {
+                    //     continue;
+                    // }
                     let mut key = String::from(slave.ip.clone() + ":" + &slave.port);
                     if inuse.contains_key(&key) {
                         continue;
@@ -185,6 +186,7 @@ impl Cluster {
                     break;
                 }
             }
+            println!("{:?} {}", self.slave, self.slave.len());
             if self.slave.len() >= slaves.len() {
                 break;
             }
@@ -268,6 +270,7 @@ fn spread(nodes: &mut HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {
                 return Some(target);
             }
             let node = v.pop().unwrap();
+            println!("{:?} {} {}", &node, target.len(), n);
             target.push(node);
         }
     }
