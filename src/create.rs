@@ -5,15 +5,15 @@ use std::io;
 use std::result;
 #[test]
 fn test_cluster() {
-    let mut addrs: Vec<&[u8]> = Vec::new();
-    addrs.push(b"127.0.0.1:9999");
-    addrs.push(b"127.0.0.2:8888");
-    addrs.push(b"127.0.0.3:8888");
-    addrs.push(b"127.0.0.4:8888");
-    addrs.push(b"127.0.0.1:8889");
-    addrs.push(b"127.0.0.2:8889");
-    addrs.push(b"127.0.0.3:8889");
-    addrs.push(b"127.0.0.4:8889");
+    let mut addrs: Vec<&str> = Vec::new();
+    addrs.push("127.0.0.1:9999");
+    addrs.push("127.0.0.2:8888");
+    addrs.push("127.0.0.3:8888");
+    addrs.push("127.0.0.4:8888");
+    addrs.push("127.0.0.1:8889");
+    addrs.push("127.0.0.2:8889");
+    addrs.push("127.0.0.3:8889");
+    addrs.push("127.0.0.4:8889");
 
     let mut cluster = Cluster::new(addrs, 4, 4).unwrap();
     cluster.init_slots();
@@ -95,13 +95,13 @@ const CLUSTER_SLOTS: usize = 16384;
 
 impl Cluster {
     pub fn new(
-        addrs: Vec<&[u8]>,
+        addrs: Vec<&str>,
         mut master_count: usize,
         slave_count: usize,
     ) -> Result<Cluster, Error> {
         let mut nodes = Vec::new();
         for n in addrs.into_iter() {
-            let node = Node::new(n).unwrap();
+            let node = Node::new(n.as_bytes()).unwrap();
             nodes.push(node);
         }
         let mut cluster = Cluster {
@@ -136,11 +136,32 @@ impl Cluster {
         };
         self.distribute_slave(slaves);
     }
-    pub fn add_slots(&self) {
-        for node in self.master {
-            let conn = Conn::new(node.ip, node.port);
+
+    pub fn add_slots(&mut self) {
+        for node in &self.master {
+            let conn = Conn::new(node.ip.clone(), node.port.clone());
+            let chunk = &self.slots.pop().unwrap();
+            conn.add_slots(&(chunk.0..chunk.1).into_iter().collect::<Vec<usize>>());
         }
     }
+    pub fn set_config_epoch(&self) {
+        let epoch = 1;
+        for node in &self.master {
+            let conn = Conn::new(node.ip.clone(), node.port.clone());
+            conn.set_config_epoch(epoch);
+        }
+    }
+    pub fn join_cluster(&mut self) {
+        if self.nodes.len() == 0 {
+            return;
+        }
+        let first_node = self.nodes.pop().unwrap();
+        for node in &self.nodes {
+            let conn = Conn::new(node.ip.clone(), node.port.clone());
+            conn.meet(&*first_node.ip, &*first_node.port);
+        }
+    }
+
     fn distribute_slave(&mut self, slaves: Vec<Node>) {
         let mut inuse = HashMap::new();
         loop {
@@ -170,6 +191,7 @@ impl Cluster {
         }
     }
 }
+
 pub fn slpit_slots(n: usize, m: usize) -> Option<Vec<Chunk>> {
     let chunks = divide(n, m);
     let mut res = Vec::new();
@@ -180,6 +202,7 @@ pub fn slpit_slots(n: usize, m: usize) -> Option<Vec<Chunk>> {
     }
     Some(res)
 }
+
 #[derive(Debug)]
 pub struct Chunk(usize, usize);
 impl PartialEq for Chunk {
@@ -187,6 +210,7 @@ impl PartialEq for Chunk {
         self.0 == other.0 && self.1 == other.1
     }
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     ip: String,

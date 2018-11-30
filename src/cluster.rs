@@ -1,5 +1,5 @@
 use redis::Commands;
-struct Conn {
+pub struct Conn {
     ip: String,
     port: String,
     client: redis::Client,
@@ -7,10 +7,10 @@ struct Conn {
 #[test]
 fn test_conn_add_slots() {
     let conn = Conn::new("127.0.0.1:".to_string(), "6379".to_string());
-    conn.set_slots(&[1, 2, 3]);
+    conn.add_slots(&[1, 2, 3]);
 }
 impl Conn {
-    fn new(ip: String, port: String) -> Conn {
+    pub fn new(ip: String, port: String) -> Conn {
         let addr = "redis://".to_string() + &ip + &port;
         let client = redis::Client::open(&*addr).unwrap();
         Conn {
@@ -19,7 +19,7 @@ impl Conn {
             client: client,
         }
     }
-    fn set_slots(&self, slots: &[usize]) {
+    pub fn add_slots(&self, slots: &[usize]) {
         let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("cluster")
             .arg("addslots")
@@ -27,7 +27,7 @@ impl Conn {
             .query(&con)
             .unwrap();
     }
-    fn set_config_epoch(&self, epoch: usize) {
+    pub fn set_config_epoch(&self, epoch: usize) {
         let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("CLUSTER")
             .arg("SET-CONFIG-EPOCH")
@@ -35,7 +35,7 @@ impl Conn {
             .query(&con)
             .unwrap();
     }
-    fn meet(&self, ip: &str, port: &str) {
+    pub fn meet(&self, ip: &str, port: &str) {
         let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("CLUSTER")
             .arg("MEET")
