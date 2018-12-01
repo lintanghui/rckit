@@ -1,17 +1,22 @@
 extern crate clap;
 extern crate redis;
 
-pub mod cluster;
+mod add;
+mod conn;
 mod create;
 use clap::{App, Arg, SubCommand};
 use create::Cluster;
 pub fn run() {
     let matches = App::new("rckit")
+        .about("redis cluster tool")
         .subcommand(
             SubCommand::with_name("create")
+                .about("create rredis cluster")
                 .arg(
                     Arg::with_name("node")
+                        .help("cluster nodes")
                         .short("n")
+                        .required(true)
                         .multiple(true)
                         .takes_value(true),
                 )
@@ -25,6 +30,25 @@ pub fn run() {
                     Arg::with_name("master")
                         .short("m")
                         .default_value("0")
+                        .multiple(true)
+                        .takes_value(true)
+                        .help("mster number"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("add")
+                .about("Add  node to cluster")
+                .arg(
+                    Arg::with_name("cluter")
+                        .required(true)
+                        .short("c")
+                        .help("existing node of cluster"),
+                )
+                .arg(
+                    Arg::with_name("node")
+                        .required(true)
+                        .short("n")
+                        .help("new node<slave,master> <master> add edto cluster")
                         .multiple(true)
                         .takes_value(true),
                 ),
@@ -43,5 +67,14 @@ pub fn run() {
         cluster.add_slots();
         cluster.set_config_epoch();
         cluster.join_cluster();
+    }
+    if let Some(sub_m) = matches.subcommand_matches("add") {
+        let cluster = sub_m
+            .value_of("cluster")
+            .expect("must spec existing cluster node");
+        let nodes: Vec<&str> = sub_m
+            .values_of("node")
+            .expect("must spec at least one node be add to cluster")
+            .collect();
     }
 }

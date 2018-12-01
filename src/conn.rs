@@ -1,4 +1,7 @@
+use add::Node;
+use create::Error;
 use redis::Commands;
+#[derive(Debug)]
 pub struct Conn {
     ip: String,
     port: String,
@@ -9,6 +12,7 @@ fn test_conn_add_slots() {
     let conn = Conn::new("127.0.0.1:".to_string(), "6379".to_string());
     conn.add_slots(&[1, 2, 3]);
 }
+
 impl Conn {
     pub fn new(ip: String, port: String) -> Conn {
         let addr = "redis://".to_string() + &ip + ":" + &port;
@@ -43,5 +47,11 @@ impl Conn {
             .arg(port)
             .query(&con)
             .unwrap();
+    }
+    pub fn health(&self) -> Result<(), Error> {
+        Ok(())
+    }
+    pub fn add_node(&self, node: Node) -> Result<(), Error> {
+        Ok(())
     }
 }

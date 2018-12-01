@@ -1,7 +1,5 @@
-#![feature(vec_remove_item)]
-use cluster::Conn;
+use conn::Conn;
 use std::collections::HashMap;
-use std::io;
 use std::result;
 #[test]
 fn test_cluster() {
@@ -46,7 +44,6 @@ pub enum Error {
     None,
     BadAddr,
     BadCluster,
-    IoError(io::Error),
 }
 #[test]
 fn test_spread() {
@@ -54,22 +51,22 @@ fn test_spread() {
     let node1 = Node {
         ip: String::from("aa"),
         port: String::from("bb"),
-        slave: None,
+        slaveof: None,
     };
     let node2 = Node {
         ip: String::from("bb"),
         port: String::from("bb"),
-        slave: None,
+        slaveof: None,
     };
     let node3 = Node {
         ip: String::from("cc"),
         port: String::from("bb"),
-        slave: None,
+        slaveof: None,
     };
     let node4 = Node {
         ip: String::from("dd"),
         port: String::from("bb"),
-        slave: None,
+        slaveof: None,
     };
     map.insert("11", vec![node1, node2]);
     map.insert("13", vec![node3, node4]);
@@ -180,7 +177,7 @@ impl Cluster {
                     let mut s = Node {
                         ip: slave.ip.clone(),
                         port: slave.port.clone(),
-                        slave: Some(slaveof),
+                        slaveof: Some(slaveof),
                     };
                     self.slave.push(s);
                     break;
@@ -217,7 +214,7 @@ impl PartialEq for Chunk {
 pub struct Node {
     ip: String,
     port: String,
-    slave: Option<String>,
+    slaveof: Option<String>,
 }
 
 impl Node {
@@ -230,12 +227,11 @@ impl Node {
             Ok(Node {
                 port: items.pop().unwrap().to_string(),
                 ip: items.pop().unwrap().to_string(),
-                slave: None,
+                slaveof: None,
             })
         }
     }
 }
-
 fn divide(n: usize, m: usize) -> Vec<usize> {
     let avg = n / m;
     let remain = n % m;
