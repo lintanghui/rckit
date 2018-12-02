@@ -1,6 +1,7 @@
 extern crate clap;
 extern crate redis;
 
+mod cluster;
 mod add;
 mod conn;
 mod create;

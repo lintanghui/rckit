@@ -1,6 +1,7 @@
+use cluster::{Error, Node};
 use conn::Conn;
 use std::collections::HashMap;
-use std::result;
+
 #[test]
 fn test_cluster() {
     let mut addrs: Vec<&str> = Vec::new();
@@ -32,38 +33,30 @@ fn test_split_slots() {
     assert_eq!(res.pop(), Some(Chunk(34, 67)));
     assert_eq!(res.pop(), Some(Chunk(0, 34)));
 }
-#[test]
-fn test_node_init() {
-    let node = Node::new(b"127.0.0.1:8888").unwrap();
-    assert_eq!(node.ip, "127.0.0.1");
-    assert_eq!(node.port, "8888");
-}
-pub static COLON_STR: &'static str = ":";
-#[derive(Debug)]
-pub enum Error {
-    None,
-    BadAddr,
-    BadCluster,
-}
+
 #[test]
 fn test_spread() {
     let mut map = HashMap::new();
     let node1 = Node {
+        name: Some(String::from("aa")),
         ip: String::from("aa"),
         port: String::from("bb"),
         slaveof: None,
     };
     let node2 = Node {
+        name: Some(String::from("aa")),
         ip: String::from("bb"),
         port: String::from("bb"),
         slaveof: None,
     };
     let node3 = Node {
+        name: Some(String::from("aa")),
         ip: String::from("cc"),
         port: String::from("bb"),
         slaveof: None,
     };
     let node4 = Node {
+        name: Some(String::from("aa")),
         ip: String::from("dd"),
         port: String::from("bb"),
         slaveof: None,
@@ -76,8 +69,6 @@ fn test_spread() {
     println!("{:?}", target.pop());
     println!("{:?}", target.pop());
 }
-
-pub type AsResult<T> = result::Result<T, Error>;
 
 pub struct Cluster {
     nodes: Vec<Node>,
@@ -120,6 +111,12 @@ impl Cluster {
             Ok(cluster)
         }
     }
+    pub fn check(&self) -> Result<(), Error> {
+        for node in &self.nodes {
+            let conn = Conn::new(node.ip.clone(), node.port.clone());
+        }
+        Ok(())
+    }
     pub fn init_slots(&mut self) {
         let slaves = {
             let mut ips = HashMap::new();
@@ -142,6 +139,7 @@ impl Cluster {
             conn.add_slots(&(chunk.0..chunk.1).into_iter().collect::<Vec<usize>>());
         }
     }
+
     pub fn set_config_epoch(&self) {
         let epoch = 1;
         for node in &self.master {
@@ -175,6 +173,7 @@ impl Cluster {
                     inuse.insert(key, slave);
                     let mut slaveof = String::from(master.ip.clone() + ":" + &master.port);
                     let mut s = Node {
+                        name: None,
                         ip: slave.ip.clone(),
                         port: slave.port.clone(),
                         slaveof: Some(slaveof),
@@ -210,28 +209,6 @@ impl PartialEq for Chunk {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Node {
-    ip: String,
-    port: String,
-    slaveof: Option<String>,
-}
-
-impl Node {
-    fn new(addr: &[u8]) -> AsResult<Node> {
-        let content = String::from_utf8_lossy(addr);
-        let mut items: Vec<&str> = content.split(COLON_STR).collect();
-        if items.len() != 2 {
-            Err(Error::BadAddr)
-        } else {
-            Ok(Node {
-                port: items.pop().unwrap().to_string(),
-                ip: items.pop().unwrap().to_string(),
-                slaveof: None,
-            })
-        }
-    }
-}
 fn divide(n: usize, m: usize) -> Vec<usize> {
     let avg = n / m;
     let remain = n % m;
