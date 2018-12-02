@@ -111,9 +111,19 @@ impl Cluster {
             Ok(cluster)
         }
     }
-    pub fn check(&self) -> Result<(), Error> {
-        for node in &self.nodes {
+    pub fn check(&mut self) -> Result<(), Error> {
+        for mut node in self.nodes.iter_mut() {
             let conn = Conn::new(node.ip.clone(), node.port.clone());
+            let nodes_info = conn.node_info();
+            println!("{:?}", nodes_info);
+            assert_eq!(
+                nodes_info.get("cluster_known_nodes").cloned(),
+                Some("1".to_string())
+            );
+            let mut nodes = try!(conn.nodes());
+            let n = nodes.pop().unwrap();
+            println!("get node {:?}", n);
+            node.name = n.name;
         }
         Ok(())
     }
@@ -131,7 +141,6 @@ impl Cluster {
         println!("master {:?} slots{:?}", self.master, self.slots);
         self.distribute_slave(slaves);
     }
-
     pub fn add_slots(&mut self) {
         for node in &self.master {
             let conn = Conn::new(node.ip.clone(), node.port.clone());
@@ -157,7 +166,13 @@ impl Cluster {
             conn.meet(&*first_node.ip, &*first_node.port);
         }
     }
-
+    pub fn set_slave(&self) -> Result<(), Error> {
+        for node in &self.slave {
+            println!("set {} replicate of {:?}", node.port, node.slaveof);
+            let _: () = node.set_slave();
+        }
+        Ok(())
+    }
     fn distribute_slave(&mut self, slaves: Vec<Node>) {
         let mut inuse = HashMap::new();
         loop {
@@ -171,12 +186,11 @@ impl Cluster {
                         continue;
                     }
                     inuse.insert(key, slave);
-                    let mut slaveof = String::from(master.ip.clone() + ":" + &master.port);
                     let mut s = Node {
                         name: None,
                         ip: slave.ip.clone(),
                         port: slave.port.clone(),
-                        slaveof: Some(slaveof),
+                        slaveof: master.name.clone(),
                     };
                     self.slave.push(s);
                     break;

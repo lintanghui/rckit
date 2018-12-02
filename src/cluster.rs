@@ -1,3 +1,4 @@
+use conn::Conn;
 use std::result;
 pub static COLON_STR: &'static str = ":";
 #[test]
@@ -29,6 +30,10 @@ impl Node {
                 slaveof: None,
             })
         }
+    }
+    pub fn set_slave(&self) {
+        let conn = Conn::new(self.ip.clone(), self.port.clone());
+        conn.set_slave(self.slaveof.clone().unwrap());
     }
 }
 #[derive(Debug)]

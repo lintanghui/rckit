@@ -51,12 +51,13 @@ impl Conn {
             .unwrap();
     }
     pub fn set_slave(&self, node_id: String) {
+        println!("set {} to replicate {}", self.ip, node_id);
         let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("CLUSTER")
             .arg("REPLICATE")
             .arg(&*node_id)
             .query(&con)
-            .unwrap();
+            .expect("cluster replicate err");
     }
     pub fn node_info(&self) -> HashMap<String, String> {
         let con = self.client.get_connection().unwrap();
@@ -81,10 +82,11 @@ impl Conn {
             if kv.len() < 8 {
                 return Err(Error::BadCluster);
             }
-            let node = Node::new(kv[1].as_bytes()).unwrap();
+            let mut node = Node::new(kv[1].as_bytes()).unwrap();
+            node.name = Some(kv[0].clone());
             nodes.push(node);
         }
-        Err(Error::BadCluster)
+        Ok(nodes)
     }
     pub fn health(&self) -> Result<(), Error> {
         Ok(())

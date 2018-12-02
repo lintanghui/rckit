@@ -1,12 +1,14 @@
 extern crate clap;
 extern crate redis;
 
-mod cluster;
 mod add;
+mod cluster;
 mod conn;
 mod create;
+
 use clap::{App, Arg, SubCommand};
 use create::Cluster;
+use std::{thread, time};
 pub fn run() {
     let matches = App::new("rckit")
         .about("redis cluster tool")
@@ -64,10 +66,13 @@ pub fn run() {
             slave_count, &node
         );
         let mut cluster = Cluster::new(node, master_count, slave_count).unwrap();
+        cluster.check().expect("check node err");
         cluster.init_slots();
         cluster.add_slots();
         cluster.set_config_epoch();
         cluster.join_cluster();
+        thread::sleep(time::Duration::from_secs(10));
+        cluster.set_slave().expect("set slave err");
     }
     if let Some(sub_m) = matches.subcommand_matches("add") {
         let cluster = sub_m
