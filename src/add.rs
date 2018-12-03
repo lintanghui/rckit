@@ -23,18 +23,24 @@ impl Add {
         })
     }
     pub fn add_node(&self) -> Result<(), Error> {
-        for (master, slave) in self.nodes.iter().map(|x| {
-            let mut couple: Vec<_> = x.split(",").collect();
-            let master = couple.pop().unwrap();
-            let slave = couple.pop().unwrap();
-            (Node::new(master.as_bytes()).unwrap(), {
-                let mut node = Node::new(slave.as_bytes()).unwrap();
-                node.slaveof = Some(master.to_string());
-                node
+        let nodes: Vec<(Node, Node)> = self
+            .nodes
+            .iter()
+            .map(|x| {
+                let mut couple: Vec<_> = x.split(",").collect();
+                let master = couple.pop().unwrap();
+                let slave = couple.pop().unwrap();
+                (Node::new(master.as_bytes()).unwrap(), {
+                    let mut node = Node::new(slave.as_bytes()).unwrap();
+                    node.slaveof = Some(master.to_string());
+                    node
+                })
             })
-        }) {
-            self.conn.add_node(master).unwrap();
-            self.conn.add_node(slave).unwrap();
+            .collect();
+        for (master, slave) in nodes {
+            self.conn.meet(&*master.ip, &*master.port);
+            self.conn.meet(&*slave.ip, &*slave.port);
+            // TODO:wait consistency and set replicate
         }
         Ok(())
     }

@@ -14,7 +14,7 @@ fn test_cluster() {
     addrs.push("127.0.0.3:8889");
     addrs.push("127.0.0.4:8889");
 
-    let mut cluster = Cluster::new(addrs, 4, 4).unwrap();
+    let mut cluster = Create::new(addrs, 4, 4).unwrap();
     cluster.init_slots();
     assert_eq!(cluster.master.len(), 4);
     assert_eq!(cluster.slots.len(), 4);
@@ -42,24 +42,28 @@ fn test_spread() {
         ip: String::from("aa"),
         port: String::from("bb"),
         slaveof: None,
+        slots: None,
     };
     let node2 = Node {
         name: Some(String::from("aa")),
         ip: String::from("bb"),
         port: String::from("bb"),
         slaveof: None,
+        slots: None,
     };
     let node3 = Node {
         name: Some(String::from("aa")),
         ip: String::from("cc"),
         port: String::from("bb"),
         slaveof: None,
+        slots: None,
     };
     let node4 = Node {
         name: Some(String::from("aa")),
         ip: String::from("dd"),
         port: String::from("bb"),
         slaveof: None,
+        slots: None,
     };
     map.insert("11", vec![node1, node2]);
     map.insert("13", vec![node3, node4]);
@@ -70,7 +74,7 @@ fn test_spread() {
     println!("{:?}", target.pop());
 }
 
-pub struct Cluster {
+pub struct Create {
     nodes: Vec<Node>,
     master_count: usize,
     slave_count: usize,
@@ -81,18 +85,18 @@ pub struct Cluster {
 
 const CLUSTER_SLOTS: usize = 16384;
 
-impl Cluster {
+impl Create {
     pub fn new(
         addrs: Vec<&str>,
         mut master_count: usize,
         slave_count: usize,
-    ) -> Result<Cluster, Error> {
+    ) -> Result<Create, Error> {
         let mut nodes = Vec::new();
         for n in addrs.into_iter() {
             let node = Node::new(n.as_bytes()).unwrap();
             nodes.push(node);
         }
-        let mut cluster = Cluster {
+        let mut cluster = Create {
             nodes,
             master_count,
             slave_count,
@@ -191,6 +195,7 @@ impl Cluster {
                         ip: slave.ip.clone(),
                         port: slave.port.clone(),
                         slaveof: master.name.clone(),
+                        slots: None,
                     };
                     self.slave.push(s);
                     break;

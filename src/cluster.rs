@@ -1,4 +1,5 @@
 use conn::Conn;
+use std::collections::HashMap;
 use std::result;
 pub static COLON_STR: &'static str = ":";
 #[test]
@@ -14,6 +15,35 @@ pub struct Node {
     pub ip: String,
     pub port: String,
     pub slaveof: Option<String>,
+    pub slots: Option<Vec<usize>>,
+}
+pub struct Cluster {
+    nodes: Vec<Node>,
+}
+impl Cluster {
+    fn new(nodes: Vec<Node>) -> Cluster {
+        Cluster { nodes }
+    }
+    fn consistency(&self) -> bool {
+        let mut node_slot: HashMap<usize, Node> = HashMap::new();
+        for node in &self.nodes {
+            let conn = Conn::new(node.ip.clone(), node.port.clone());
+            let nodes = conn.nodes().expect("get cluster nodes err");
+            for node in nodes.into_iter() {
+                let slots = node.slots.clone();
+                for slot in slots.unwrap() {
+                    if node_slot.contains_key(&slot) {
+                        if node_slot.get(&slot).unwrap().clone() != node.clone() {
+                            return false;
+                        }
+                    } else {
+                        node_slot.insert(slot.clone(), node.clone());
+                    }
+                }
+            }
+        }
+        true
+    }
 }
 
 impl Node {
@@ -28,6 +58,7 @@ impl Node {
                 port: items.pop().unwrap().to_string(),
                 ip: items.pop().unwrap().to_string(),
                 slaveof: None,
+                slots: None,
             })
         }
     }

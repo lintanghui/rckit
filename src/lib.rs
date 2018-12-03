@@ -7,7 +7,7 @@ mod conn;
 mod create;
 
 use clap::{App, Arg, SubCommand};
-use create::Cluster;
+use create::Create;
 use std::{thread, time};
 pub fn run() {
     let matches = App::new("rckit")
@@ -65,14 +65,15 @@ pub fn run() {
             "create cluster with replicate {} node{:?}",
             slave_count, &node
         );
-        let mut cluster = Cluster::new(node, master_count, slave_count).unwrap();
-        cluster.check().expect("check node err");
-        cluster.init_slots();
-        cluster.add_slots();
-        cluster.set_config_epoch();
-        cluster.join_cluster();
+        let mut create = Create::new(node, master_count, slave_count).unwrap();
+        create.check().expect("check node err");
+        create.init_slots();
+        create.add_slots();
+        create.set_config_epoch();
+        create.join_cluster();
+        // TODOwati consistency
         thread::sleep(time::Duration::from_secs(10));
-        cluster.set_slave().expect("set slave err");
+        create.set_slave().expect("set slave err");
     }
     if let Some(sub_m) = matches.subcommand_matches("add") {
         let cluster = sub_m

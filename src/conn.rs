@@ -82,7 +82,22 @@ impl Conn {
             if kv.len() < 8 {
                 return Err(Error::BadCluster);
             }
+            let mut slots = vec![];
             let mut node = Node::new(kv[1].as_bytes()).unwrap();
+            for content in &kv[8..] {
+                if content.contains("->") || content.contains("->") {
+                    continue;
+                }
+                let mut scope: Vec<&str> = content.split("-").collect();
+                let start = scope.pop().unwrap().to_string().parse::<usize>().unwrap();
+                slots.push(start);
+                if scope.len() == 1 {
+                    let end = scope.pop().unwrap().to_string().parse::<usize>().unwrap();
+                    for i in (start + 1..end).into_iter() {
+                        slots.push(i);
+                    }
+                }
+            }
             node.name = Some(kv[0].clone());
             nodes.push(node);
         }
