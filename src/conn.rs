@@ -75,9 +75,9 @@ impl Conn {
     pub fn nodes(&self) -> Result<Vec<Node>, Error> {
         let con = self.client.get_connection().unwrap();
         let info: String = redis::cmd("CLUSTER").arg("NODES").query(&con).unwrap();
-        let infos: Vec<String> = info.split("\r\n").map(|x| x.to_string()).collect();
+        // let infos: Vec<String> = info.split("\n").map(|x| x.to_string()).collect();
         let mut nodes: Vec<Node> = Vec::new();
-        for mut info in infos.into_iter() {
+        for mut info in info.lines() {
             let kv: Vec<String> = info.split(" ").map(|x| x.to_string()).collect();
             if kv.len() < 8 {
                 return Err(Error::BadCluster);
@@ -89,15 +89,16 @@ impl Conn {
                     continue;
                 }
                 let mut scope: Vec<&str> = content.split("-").collect();
-                let start = scope.pop().unwrap().to_string().parse::<usize>().unwrap();
+                let start = scope[0].to_string().parse::<usize>().unwrap();
                 slots.push(start);
-                if scope.len() == 1 {
-                    let end = scope.pop().unwrap().to_string().parse::<usize>().unwrap();
-                    for i in (start + 1..end).into_iter() {
+                if scope.len() == 2 {
+                    let end = scope[1].to_string().parse::<usize>().unwrap();
+                    for i in (start + 1..end + 1).into_iter() {
                         slots.push(i);
                     }
                 }
             }
+            node.slots = Some(slots);
             node.name = Some(kv[0].clone());
             nodes.push(node);
         }

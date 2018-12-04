@@ -8,7 +8,17 @@ fn test_node_init() {
     assert_eq!(node.ip, "127.0.0.1");
     assert_eq!(node.port, "8888");
 }
-
+#[test]
+fn test_consistency() {
+    let mut nodes = Vec::new();
+    nodes.push(Node::new("127.0.0.1:7000".as_bytes()).unwrap());
+    nodes.push(Node::new("127.0.0.1:7001".as_bytes()).unwrap());
+    nodes.push(Node::new("127.0.0.1:7002".as_bytes()).unwrap());
+    nodes.push(Node::new("127.0.0.1:7003".as_bytes()).unwrap());
+    nodes.push(Node::new("127.0.0.1:7004".as_bytes()).unwrap());
+    let cluster = Cluster::new(nodes);
+    assert_eq!(cluster.consistency(), true);
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     pub name: Option<String>,
@@ -20,6 +30,7 @@ pub struct Node {
 pub struct Cluster {
     nodes: Vec<Node>,
 }
+
 impl Cluster {
     fn new(nodes: Vec<Node>) -> Cluster {
         Cluster { nodes }
@@ -30,15 +41,27 @@ impl Cluster {
             let conn = Conn::new(node.ip.clone(), node.port.clone());
             let nodes = conn.nodes().expect("get cluster nodes err");
             for node in nodes.into_iter() {
-                let slots = node.slots.clone();
-                for slot in slots.unwrap() {
-                    if node_slot.contains_key(&slot) {
-                        if node_slot.get(&slot).unwrap().clone() != node.clone() {
-                            return false;
+                match node.slots.as_ref() {
+                    Some(slots) => {
+                        for slot in slots {
+                            if node_slot.contains_key(&slot) {
+                                if node_slot.get(&slot).expect("get slots err").clone()
+                                    != node.clone()
+                                {
+                                    println!(
+                                        "slot {} want {:?} get {:?}",
+                                        slot,
+                                        node_slot.get(&slot).unwrap().name,
+                                        node.name
+                                    );
+                                    return false;
+                                }
+                            } else {
+                                node_slot.insert(slot.clone(), node.clone());
+                            }
                         }
-                    } else {
-                        node_slot.insert(slot.clone(), node.clone());
                     }
+                    None => continue,
                 }
             }
         }
