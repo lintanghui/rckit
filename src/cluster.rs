@@ -49,6 +49,7 @@ impl Cluster {
     pub fn consistency(&self) -> bool {
         let mut node_slot: HashMap<usize, Node> = HashMap::new();
         for node in &self.nodes {
+            let mut slot_num = 0;
             let conn = Conn::new(node.ip.clone(), node.port.clone());
             let nodes = conn.nodes().expect("get cluster nodes err");
             println!("node{:?}  {:?}", node.port, nodes.len());
@@ -69,6 +70,7 @@ impl Cluster {
                                     return false;
                                 }
                             } else {
+                                slot_num = slot_num + 1;
                                 node_slot.insert(slot.clone(), node.clone());
                             }
                         }
@@ -76,7 +78,8 @@ impl Cluster {
                     None => continue,
                 }
             }
-            if node_slot.len() != 16384 {
+            if slot_num != 16384 {
+                println!("all slots not covered");
                 return false;
             }
         }

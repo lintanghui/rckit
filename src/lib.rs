@@ -21,7 +21,6 @@ pub fn run() {
                         .help("cluster nodes")
                         .short("n")
                         .required(true)
-                        .multiple(true)
                         .takes_value(true),
                 )
                 .arg(
@@ -34,27 +33,28 @@ pub fn run() {
                     Arg::with_name("master")
                         .short("m")
                         .default_value("0")
-                        .multiple(true)
                         .takes_value(true)
                         .help("mster number"),
                 ),
         )
         .subcommand(
             SubCommand::with_name("add")
-                .about("Add  node to cluster")
+                .about("Add  node to existing cluster")
                 .arg(
                     Arg::with_name("cluster")
                         .required(true)
                         .short("c")
-                        .help("existing node of cluster")
+                        .help("-c clusterip:port, spec cluster ip and  port")
                         .takes_value(true),
                 )
                 .arg(
                     Arg::with_name("node")
                         .required(true)
                         .short("n")
-                        .help("new node<slave,master> <master> add edto cluster")
-                        .multiple(true)
+                        .help(
+                            "add new node  to cluster,
+                        -n <master,slave> <master>",
+                        )
                         .takes_value(true),
                 ),
         )
@@ -77,7 +77,6 @@ pub fn run() {
             eprintln!("wait consistent fail");
             thread::sleep(time::Duration::from_secs(1));
         }
-        thread::sleep(time::Duration::from_secs(10));
         create.set_slave().expect("set slave err");
     }
     if let Some(sub_m) = matches.subcommand_matches("add") {
