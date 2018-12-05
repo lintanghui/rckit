@@ -1,4 +1,4 @@
-use cluster::{Error, Node};
+use cluster::{Cluster, Error, Node, Role};
 use conn::Conn;
 use std::collections::HashMap;
 
@@ -37,34 +37,10 @@ fn test_split_slots() {
 #[test]
 fn test_spread() {
     let mut map = HashMap::new();
-    let node1 = Node {
-        name: Some(String::from("aa")),
-        ip: String::from("aa"),
-        port: String::from("bb"),
-        slaveof: None,
-        slots: None,
-    };
-    let node2 = Node {
-        name: Some(String::from("aa")),
-        ip: String::from("bb"),
-        port: String::from("bb"),
-        slaveof: None,
-        slots: None,
-    };
-    let node3 = Node {
-        name: Some(String::from("aa")),
-        ip: String::from("cc"),
-        port: String::from("bb"),
-        slaveof: None,
-        slots: None,
-    };
-    let node4 = Node {
-        name: Some(String::from("aa")),
-        ip: String::from("dd"),
-        port: String::from("bb"),
-        slaveof: None,
-        slots: None,
-    };
+    let node1 = Node::new(b"aa::bb").unwrap();
+    let node2 = Node::new(b"bb::bb").unwrap();
+    let node3 = Node::new(b"cc::bb").unwrap();
+    let node4 = Node::new(b"dd:bb").unwrap();
     map.insert("11", vec![node1, node2]);
     map.insert("13", vec![node3, node4]);
     let mut target = spread(&mut map, 3).unwrap();
@@ -75,7 +51,7 @@ fn test_spread() {
 }
 
 pub struct Create {
-    nodes: Vec<Node>,
+    pub cluster: Cluster,
     master_count: usize,
     slave_count: usize,
     slots: Vec<Chunk>,
@@ -96,8 +72,8 @@ impl Create {
             let node = Node::new(n.as_bytes()).unwrap();
             nodes.push(node);
         }
-        let mut cluster = Create {
-            nodes,
+        let mut create = Create {
+            cluster: Cluster::new(nodes),
             master_count,
             slave_count,
             slots: vec![],
@@ -105,42 +81,27 @@ impl Create {
             slave: vec![],
         };
         if master_count == 0 {
-            master_count = cluster.nodes.len() / (slave_count + 1);
+            master_count = create.cluster.len() / (slave_count + 1);
         }
         if master_count < 3 {
             Err(Error::BadCluster)
         } else {
-            cluster.master_count = master_count;
-            cluster.slave_count = slave_count;
-            Ok(cluster)
+            create.master_count = master_count;
+            create.slave_count = slave_count;
+            Ok(create)
         }
     }
-    pub fn check(&mut self) -> Result<(), Error> {
-        for mut node in self.nodes.iter_mut() {
-            let conn = Conn::new(node.ip.clone(), node.port.clone());
-            let nodes_info = conn.node_info();
-            println!("{:?}", nodes_info);
-            assert_eq!(
-                nodes_info.get("cluster_known_nodes").cloned(),
-                Some("1".to_string())
-            );
-            let mut nodes = try!(conn.nodes());
-            let n = nodes.pop().unwrap();
-            println!("get node {:?}", n);
-            node.name = n.name;
-        }
-        Ok(())
-    }
+
     pub fn init_slots(&mut self) {
         let slaves = {
             let mut ips = HashMap::new();
-            for n in &self.nodes {
+            for n in &self.cluster.nodes {
                 let key = &*n.ip;
                 ips.entry(key).or_insert(vec![]).push(n.clone());
             }
             self.master = spread(&mut ips, self.master_count).expect("spread master err");
             self.slots = slpit_slots(CLUSTER_SLOTS, self.master_count).unwrap();
-            spread(&mut ips, self.nodes.len() - self.master_count).unwrap()
+            spread(&mut ips, self.cluster.len() - self.master_count).unwrap()
         };
         println!("master {:?} slots{:?}", self.master, self.slots);
         self.distribute_slave(slaves);
@@ -161,13 +122,13 @@ impl Create {
         }
     }
     pub fn join_cluster(&mut self) {
-        if self.nodes.len() == 0 {
+        if self.cluster.len() == 0 {
             return;
         }
-        let first_node = self.nodes.pop().unwrap();
-        for node in &self.nodes {
-            let conn = Conn::new(node.ip.clone(), node.port.clone());
-            conn.meet(&*first_node.ip, &*first_node.port);
+        let first_node = self.cluster.nodes.pop().unwrap();
+        let conn = Conn::new(first_node.ip.clone(), first_node.port.clone());
+        for node in &self.cluster.nodes {
+            conn.meet(&*node.ip, &*node.port);
         }
     }
     pub fn set_slave(&self) -> Result<(), Error> {
@@ -190,13 +151,9 @@ impl Create {
                         continue;
                     }
                     inuse.insert(key, slave);
-                    let mut s = Node {
-                        name: None,
-                        ip: slave.ip.clone(),
-                        port: slave.port.clone(),
-                        slaveof: master.name.clone(),
-                        slots: None,
-                    };
+                    let mut s =
+                        Node::new((slave.ip.clone() + ":" + &*slave.port).as_bytes()).unwrap();
+                    s.slaveof = Some(master.name.clone());
                     self.slave.push(s);
                     break;
                 }
@@ -206,6 +163,9 @@ impl Create {
                 break;
             }
         }
+    }
+    pub fn consistent(&self) -> bool {
+        self.cluster.consistency()
     }
 }
 

@@ -18,7 +18,8 @@ fn test_conn_add_slots() {
 impl Conn {
     pub fn new(ip: String, port: String) -> Conn {
         let addr = "redis://".to_string() + &ip + ":" + &port;
-        let client = redis::Client::open(&*addr).unwrap();
+
+        let client = redis::Client::open(&*addr).expect("open redis err");
         Conn {
             ip,
             port,
@@ -99,7 +100,7 @@ impl Conn {
                 }
             }
             node.slots = Some(slots);
-            node.name = Some(kv[0].clone());
+            node.name = kv[0].clone();
             nodes.push(node);
         }
         Ok(nodes)

@@ -1,47 +1,62 @@
-use cluster::{Error, Node};
+use cluster::{Cluster, Error, Node, Role};
 use conn::Conn;
+use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Add {
-    cluster: String,
-    nodes: Vec<String>,
+    origin: String,
+    pub cluster: Cluster,
     conn: Conn,
+    slave_master: HashMap<String, String>,
 }
 
 impl Add {
-    pub fn new(&self, cluster: String, nodes: Vec<String>) -> Result<Add, Error> {
-        let addr = cluster.clone();
-        let mut items: Vec<&str> = addr.split(":").collect();
-        let conn = Conn::new(
-            items.pop().unwrap().to_string(),
-            items.pop().unwrap().to_string(),
-        );
+    pub fn new(origin: String, addrs: Vec<String>) -> Result<Add, Error> {
+        let addr = origin.clone();
+        let items: Vec<&str> = addr.split(":").collect();
+        let conn = Conn::new(items[0].to_string(), items[1].to_string());
         conn.health().unwrap();
+        let mut nodes = Vec::new();
+        let mut sm = HashMap::new();
+        for n in addrs.into_iter() {
+            let mut ms: Vec<&str> = n.split(",").collect();
+            let master_host = ms.pop().unwrap();
+            let master = Node::new(master_host.as_bytes()).expect("create new node fail");
+            nodes.push(master);
+            if ms.len() == 1 {
+                let slave_host = ms.pop().unwrap();
+                let mut node = Node::new(slave_host.as_bytes()).expect("create new node fail");
+                node.set_role(Role::slave);
+                nodes.push(node);
+                sm.insert(slave_host.to_string(), master_host.to_string());
+            }
+        }
         Ok(Add {
-            cluster,
-            nodes,
+            origin,
+            slave_master: sm,
+            cluster: Cluster::new(nodes),
             conn,
         })
     }
     pub fn add_node(&self) -> Result<(), Error> {
-        let nodes: Vec<(Node, Node)> = self
-            .nodes
-            .iter()
-            .map(|x| {
-                let mut couple: Vec<_> = x.split(",").collect();
-                let master = couple.pop().unwrap();
-                let slave = couple.pop().unwrap();
-                (Node::new(master.as_bytes()).unwrap(), {
-                    let mut node = Node::new(slave.as_bytes()).unwrap();
-                    node.slaveof = Some(master.to_string());
-                    node
-                })
-            })
-            .collect();
-        for (master, slave) in nodes {
-            self.conn.meet(&*master.ip, &*master.port);
-            self.conn.meet(&*slave.ip, &*slave.port);
-            // TODO:wait consistency and set replicate
+        for node in &self.cluster.nodes {
+            self.conn.meet(&*node.ip, &*node.port);
         }
         Ok(())
+    }
+    pub fn set_slave(&mut self) {
+        let mut nodes_info = HashMap::new();
+        for node in &self.cluster.nodes {
+            nodes_info.insert(node.ip.clone() + ":" + &*node.port, node.clone());
+        }
+        println!("nodes_info {:?}", nodes_info);
+        println!("s_m info {:?}", self.slave_master);
+        for node in self.cluster.nodes.iter_mut() {
+            if self.slave_master.contains_key(&*node.addr()) {
+                let master = self.slave_master.get(&node.addr()).unwrap();
+                let master_node = nodes_info.get(master);
+                node.slaveof = Some(master_node.unwrap().clone().name);
+                let _: () = node.set_slave();
+            }
+        }
     }
 }

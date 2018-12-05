@@ -6,6 +6,7 @@ mod cluster;
 mod conn;
 mod create;
 
+use add::Add;
 use clap::{App, Arg, SubCommand};
 use create::Create;
 use std::{thread, time};
@@ -42,10 +43,11 @@ pub fn run() {
             SubCommand::with_name("add")
                 .about("Add  node to cluster")
                 .arg(
-                    Arg::with_name("cluter")
+                    Arg::with_name("cluster")
                         .required(true)
                         .short("c")
-                        .help("existing node of cluster"),
+                        .help("existing node of cluster")
+                        .takes_value(true),
                 )
                 .arg(
                     Arg::with_name("node")
@@ -66,12 +68,15 @@ pub fn run() {
             slave_count, &node
         );
         let mut create = Create::new(node, master_count, slave_count).unwrap();
-        create.check().expect("check node err");
+        create.cluster.check().expect("check node err");
         create.init_slots();
         create.add_slots();
         create.set_config_epoch();
         create.join_cluster();
-        // TODOwati consistency
+        while !create.consistent() {
+            eprintln!("wait consistent fail");
+            thread::sleep(time::Duration::from_secs(1));
+        }
         thread::sleep(time::Duration::from_secs(10));
         create.set_slave().expect("set slave err");
     }
@@ -83,5 +88,18 @@ pub fn run() {
             .values_of("node")
             .expect("must spec at least one node be add to cluster")
             .collect();
+        println!("add node {:?} to cluster {}", nodes, cluster);
+        let mut add = Add::new(
+            cluster.to_string(),
+            nodes.iter().map(|x| x.to_string()).collect(),
+        )
+        .unwrap();
+        add.cluster.check().expect("check cluste nodes fail");
+        let _: () = add.add_node().expect("add node fail");
+        while !add.cluster.consistency() {
+            eprintln!("wait consistent fail");
+            thread::sleep(time::Duration::from_secs(1));
+        }
+        add.set_slave();
     }
 }
