@@ -1,7 +1,7 @@
 use cluster::{Cluster, Error, Node, Role};
 use conn::Conn;
 use std::collections::HashMap;
-
+use util;
 #[test]
 fn test_cluster() {
     let mut addrs: Vec<&str> = Vec::new();
@@ -108,9 +108,8 @@ impl Create {
     }
     pub fn add_slots(&mut self) {
         for node in &self.master {
-            let conn = Conn::new(node.ip.clone(), node.port.clone());
             let chunk = &self.slots.pop().unwrap();
-            conn.add_slots(&(chunk.0..chunk.1).into_iter().collect::<Vec<usize>>());
+            node.add_slots(&(chunk.0..chunk.1).into_iter().collect::<Vec<usize>>());
         }
     }
 
@@ -170,7 +169,7 @@ impl Create {
 }
 
 pub fn slpit_slots(n: usize, m: usize) -> Option<Vec<Chunk>> {
-    let chunks = divide(n, m);
+    let chunks = util::divide(n, m);
     let mut res = Vec::new();
     let mut total: usize = 0;
     for num in chunks.into_iter() {
@@ -186,22 +185,6 @@ impl PartialEq for Chunk {
     fn eq(&self, other: &Chunk) -> bool {
         self.0 == other.0 && self.1 == other.1
     }
-}
-
-fn divide(n: usize, m: usize) -> Vec<usize> {
-    let avg = n / m;
-    let remain = n % m;
-    let mut c = Vec::new();
-    let mut i = 0;
-    while i < m {
-        if i < remain {
-            c.push(avg + 1);
-        } else {
-            c.push(avg);
-        }
-        i = i + 1;
-    }
-    c
 }
 
 fn spread(nodes: &mut HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {

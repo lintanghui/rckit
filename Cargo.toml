@@ -1,5 +1,6 @@
 [package]
 name = "rckit"
+license = "MIT"
 version = "0.1.0"
 authors = ["lintanghui <lintanghui@bilibili.com>"]
 

@@ -5,9 +5,11 @@ mod add;
 mod cluster;
 mod conn;
 mod create;
+mod util;
 
 use add::Add;
 use clap::{App, Arg, SubCommand};
+use cluster::{Cluster, Node};
 use create::Create;
 use std::{thread, time};
 pub fn run() {
@@ -58,6 +60,20 @@ pub fn run() {
                         .takes_value(true),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("delete")
+                .about(
+                    "delete node from cluster
+                if node is a master,it will migrate slots to other node and delete is's slave too",
+                )
+                .arg(
+                    Arg::with_name("node")
+                        .help("-n <node>")
+                        .short("n")
+                        .required(true)
+                        .takes_value(true),
+                ),
+        )
         .get_matches();
     if let Some(sub_m) = matches.subcommand_matches("create") {
         let slave_count = clap::value_t!(sub_m.value_of("replicate"), usize).unwrap();
@@ -100,5 +116,17 @@ pub fn run() {
             thread::sleep(time::Duration::from_secs(1));
         }
         add.set_slave();
+    }
+    if let Some(sub_m) = matches.subcommand_matches("delete") {
+        let newnodes: Vec<&str> = sub_m
+            .values_of("node")
+            .expect("get node to deleted fail")
+            .collect();
+        let new_node = Node::new(newnodes[0].as_bytes()).expect("new node fail");
+        let nodes = new_node.nodes();
+        let cluster = Cluster::new(nodes);
+        for node in newnodes {
+            cluster.delete_node(cluster.node(node).expect("get node from cluster fail"));
+        }
     }
 }

@@ -108,7 +108,12 @@ impl Conn {
     pub fn health(&self) -> Result<(), Error> {
         Ok(())
     }
-    pub fn add_node(&self, node: Node) -> Result<(), Error> {
-        Ok(())
+    pub fn forget(&self, node: &str) {
+        let con = self.client.get_connection().unwrap();
+        let _: () = redis::cmd("CLUSTER")
+            .arg("FORGET")
+            .arg(node)
+            .query(&con)
+            .unwrap();
     }
 }
