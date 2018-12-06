@@ -8,11 +8,15 @@ pub struct Conn {
     client: redis::Client,
 }
 #[test]
-fn test_conn_add_slots() {
-    let conn = Conn::new("127.0.0.1".to_string(), "7008".to_string());
+fn test_conn() {
+    let conn = Conn::new("127.0.0.1".to_string(), "7001".to_string());
     //  conn.add_slots(&[1, 2, 3]);
     let info = conn.node_info();
     println!("info {:?}", info);
+    let key = conn.keyinslots(7761, 3);
+    println!("{:?}", key);
+    let key = conn.keyinslots(7762, 3);
+    println!("{:?}", key);
 }
 
 impl Conn {
@@ -115,5 +119,37 @@ impl Conn {
             .arg(node)
             .query(&con)
             .unwrap();
+    }
+    pub fn setslot(&self, state: &str, slot: usize, nodeid: &str) {
+        let con = self.client.get_connection().unwrap();
+        let _: () = redis::cmd("CLUSTER")
+            .arg("SETSLOT")
+            .arg(slot)
+            .arg(state)
+            .arg(nodeid)
+            .query(&con)
+            .unwrap();
+    }
+    pub fn migrate(&self, ip: &str, port: &str, key: Vec<String>) {
+        let con = self.client.get_connection().unwrap();
+        let _: () = redis::cmd("MIGRATE")
+            .arg(ip)
+            .arg(port)
+            .arg(key)
+            .query(&con)
+            .unwrap();
+    }
+    pub fn keyinslots(&self, slot: usize, count: usize) -> Option<Vec<String>> {
+        let con = self.client.get_connection().unwrap();
+        let result: Vec<String> = redis::cmd("CLUSTER")
+            .arg("GETKEYSINSLOT")
+            .arg(slot)
+            .arg(count)
+            .query(&con)
+            .unwrap();
+        if result.len() > 0 {
+            return Some(result);
+        }
+        None
     }
 }

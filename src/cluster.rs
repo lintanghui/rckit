@@ -117,6 +117,9 @@ impl Cluster {
                 let count = dispatch.pop().unwrap();
                 let migrate = &slots[start..start + count];
                 // todo:MIGRATE DATA
+                for slot in migrate.iter() {
+                    self.migrate_slot(del_node, node, *slot);
+                }
                 start = start + count;
             }
         }
@@ -127,6 +130,7 @@ impl Cluster {
             node.forget(&del_node);
         }
     }
+
     pub fn node(&self, node: &str) -> Option<&Node> {
         for n in &self.nodes {
             if &n.addr() == node {
@@ -134,6 +138,24 @@ impl Cluster {
             }
         }
         None
+    }
+
+    fn migrate_slot(&self, src: &Node, dst: &Node, slot: usize) {
+        dst.setslot("IMPORTING", slot);
+        src.setslot("MIGRATING", slot);
+        loop {
+            match src.keysinslot(slot) {
+                Some(key) => src.migrate(&*dst.ip, &*dst.port, key),
+                None => break,
+            }
+        }
+        for node in self
+            .nodes
+            .iter()
+            .filter(|&x| x.role == Some(Role::master) && x.name != src.name)
+        {
+            node.setslot("NODE", slot);
+        }
     }
 }
 
@@ -179,6 +201,15 @@ impl Node {
         let conn = Conn::new(self.ip.clone(), self.port.clone());
         conn.forget(&*node.name);
     }
+    pub fn setslot(&self, state: &str, slot: usize) {
+        let conn = Conn::new(self.ip.clone(), self.port.clone());
+        conn.setslot(state, slot, &*self.name);
+    }
+    fn keysinslot(&self, slot: usize) -> Option<Vec<String>> {
+        let conn = Conn::new(self.ip.clone(), self.port.clone());
+        conn.keyinslots(slot, 100)
+    }
+    fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {}
 }
 #[derive(Debug)]
 pub enum Error {
