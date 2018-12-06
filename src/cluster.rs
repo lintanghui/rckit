@@ -1,5 +1,6 @@
 use conn::Conn;
 use std::collections::HashMap;
+use std::fmt;
 use std::result;
 use std::str;
 use util;
@@ -26,7 +27,27 @@ pub enum Role {
     master,
     slave,
 }
-#[derive(Debug, Clone, PartialEq)]
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Node) -> bool {
+        self.ip == other.ip && self.port == other.port
+    }
+}
+impl fmt::Debug for Node {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let slot_num;
+        match &self.slots {
+            Some(slots) => slot_num = slots.len(),
+            None => slot_num = 0,
+        }
+        write!(
+            f,
+            "Node{{name: {:?} ,ip: {},port: {},slots: {},role:{:?},slaveof:{:?} }}",
+            self.name, self.ip, self.port, slot_num, self.role, self.slaveof
+        )
+    }
+}
+#[derive(Clone)]
 pub struct Node {
     pub name: String,
     pub ip: String,
@@ -123,12 +144,21 @@ impl Cluster {
                 start = start + count;
             }
         }
-        for node in &self.nodes {
-            if node.name == del_node.name {
-                continue;
+
+        let forget = |node: &Node| {
+            for n in &self.nodes {
+                if n.name == node.name {
+                    continue;
+                }
+                if Some(node.name.to_string()) == node.slaveof {
+                    // todo forget slave
+                    continue;
+                }
+                println!("node {:?} forget {:?}", n, node);
+                n.forget(&node);
             }
-            node.forget(&del_node);
-        }
+        };
+        forget(del_node);
     }
 
     pub fn node(&self, node: &str) -> Option<&Node> {
@@ -209,7 +239,10 @@ impl Node {
         let conn = Conn::new(self.ip.clone(), self.port.clone());
         conn.keyinslots(slot, 100)
     }
-    fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {}
+    fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {
+        let conn = Conn::new(self.ip.clone(), self.port.clone());
+        conn.migrate(dstip, dstport, key);
+    }
 }
 #[derive(Debug)]
 pub enum Error {

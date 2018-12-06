@@ -63,8 +63,7 @@ pub fn run() {
         .subcommand(
             SubCommand::with_name("delete")
                 .about(
-                    "delete node from cluster
-                if node is a master,it will migrate slots to other node and delete is's slave too",
+                    "delete node from cluster.\r\nif node is a master,it will migrate slots to other node and delete is's slave too",
                 )
                 .arg(
                     Arg::with_name("node")
@@ -124,9 +123,16 @@ pub fn run() {
             .collect();
         let new_node = Node::new(newnodes[0].as_bytes()).expect("new node fail");
         let nodes = new_node.nodes();
+        for n in &nodes {
+            println!("nodes {:?} ", n);
+        }
         let cluster = Cluster::new(nodes);
+
         for node in newnodes {
-            cluster.delete_node(cluster.node(node).expect("get node from cluster fail"));
+            let del_node = cluster.node(node).expect("get node from cluster fail");
+
+            println!("delete node {:?}", del_node);
+            cluster.delete_node(del_node);
         }
     }
 }

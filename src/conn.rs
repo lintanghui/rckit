@@ -1,4 +1,4 @@
-use cluster::{Error, Node};
+use cluster::{Error, Node, Role};
 use redis::Commands;
 use std::collections::HashMap;
 #[derive(Debug)]
@@ -88,7 +88,17 @@ impl Conn {
                 return Err(Error::BadCluster);
             }
             let mut slots = vec![];
-            let mut node = Node::new(kv[1].as_bytes()).unwrap();
+            let addr = kv[1].split('@').next().expect("must contain addr");
+
+            let mut node = Node::new(addr.as_bytes()).unwrap();
+            if kv[2].contains("master") {
+                node.set_role(Role::master);
+            } else {
+                node.set_role(Role::slave);
+            }
+            if kv[3] != "-" {
+                node.slaveof = Some(kv[3].clone());
+            }
             for content in &kv[8..] {
                 if content.contains("->") || content.contains("->") {
                     continue;
@@ -132,9 +142,14 @@ impl Conn {
     }
     pub fn migrate(&self, ip: &str, port: &str, key: Vec<String>) {
         let con = self.client.get_connection().unwrap();
+        println!("migrate keys {:?}", key);
         let _: () = redis::cmd("MIGRATE")
             .arg(ip)
             .arg(port)
+            .arg("")
+            .arg("0")
+            .arg(5000)
+            .arg("KEYS")
             .arg(key)
             .query(&con)
             .unwrap();
