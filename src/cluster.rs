@@ -91,15 +91,17 @@ impl Cluster {
                                     );
                                     return false;
                                 }
+                                slot_num = slot_num + 1;
                             } else {
                                 slot_num = slot_num + 1;
                                 node_slot.insert(slot.clone(), node.clone());
                             }
                         }
                     }
-                    None => continue,
+                    None => println!("not slot in this node {:?}", node),
                 }
             }
+            println!("slot num {}", slot_num);
             if slot_num != 16384 {
                 println!("all slots not covered");
                 return false;
@@ -135,6 +137,7 @@ impl Cluster {
             let mut dispatch = util::divide(slot_count, nodes.len());
             let mut start = 0;
             for node in nodes {
+                println!("start migrate from {:?} to {:?}", del_node, node);
                 let count = dispatch.pop().unwrap();
                 let migrate = &slots[start..start + count];
                 // todo:MIGRATE DATA
@@ -142,6 +145,7 @@ impl Cluster {
                     self.migrate_slot(del_node, node, *slot);
                 }
                 start = start + count;
+                println!("stop migrate from {:?} to {:?}", del_node, node);
             }
         }
 
@@ -179,11 +183,12 @@ impl Cluster {
                 None => break,
             }
         }
-        for node in self
+        let masters: Vec<&Node> = self
             .nodes
             .iter()
             .filter(|&x| x.role == Some(Role::master) && x.name != src.name)
-        {
+            .collect();
+        for node in masters {
             node.setslot("NODE", slot);
         }
     }

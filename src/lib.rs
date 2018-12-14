@@ -23,6 +23,7 @@ pub fn run() {
                         .help("cluster nodes")
                         .short("n")
                         .required(true)
+                        .multiple(true)
                         .takes_value(true),
                 )
                 .arg(
