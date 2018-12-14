@@ -4,6 +4,8 @@ license = "MIT"
 version = "0.1.0"
 description="redis cluster toolkit"
 authors = ["lintanghui <lintanghui@bilibili.com>"]
+repository = "https://github.com/lintanghui/rckit"
+documentation = "https://docs.rs/rckit/"
 
 [dependencies]
 clap="2.23.0"
