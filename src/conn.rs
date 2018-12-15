@@ -132,13 +132,17 @@ impl Conn {
     }
     pub fn setslot(&self, state: &str, slot: usize, nodeid: &str) {
         let con = self.client.get_connection().unwrap();
-        let _: () = redis::cmd("CLUSTER")
+        if let Ok(()) = redis::cmd("CLUSTER")
             .arg("SETSLOT")
             .arg(slot)
             .arg(state)
             .arg(nodeid)
             .query(&con)
-            .unwrap();
+        {
+            ();
+        } else {
+            println!("set slot{} to node{} err", slot, nodeid);
+        };
     }
     pub fn migrate(&self, ip: &str, port: &str, key: Vec<String>) {
         let con = self.client.get_connection().unwrap();
@@ -155,15 +159,19 @@ impl Conn {
             .unwrap();
     }
     pub fn keyinslots(&self, slot: usize, count: usize) -> Option<Vec<String>> {
-        let con = self.client.get_connection().unwrap();
-        let result: Vec<String> = redis::cmd("CLUSTER")
-            .arg("GETKEYSINSLOT")
-            .arg(slot)
-            .arg(count)
-            .query(&con)
-            .unwrap();
-        if result.len() > 0 {
-            return Some(result);
+        if let Ok(con) = self.client.get_connection() {
+            let result: Vec<String> = redis::cmd("CLUSTER")
+                .arg("GETKEYSINSLOT")
+                .arg(slot)
+                .arg(count)
+                .query(&con)
+                .unwrap();
+            if result.len() > 0 {
+                return Some(result);
+            }
+            return None;
+        } else {
+            println!("get connection err {:?}", self.client);
         }
         None
     }

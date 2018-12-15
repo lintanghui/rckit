@@ -175,8 +175,8 @@ impl Cluster {
     }
 
     fn migrate_slot(&self, src: &Node, dst: &Node, slot: usize) {
-        dst.setslot("IMPORTING", slot);
-        src.setslot("MIGRATING", slot);
+        dst.setslot("IMPORTING", src.name.clone(), slot);
+        src.setslot("MIGRATING", dst.name.clone(), slot);
         loop {
             match src.keysinslot(slot) {
                 Some(key) => src.migrate(&*dst.ip, &*dst.port, key),
@@ -189,7 +189,7 @@ impl Cluster {
             .filter(|&x| x.role == Some(Role::master) && x.name != src.name)
             .collect();
         for node in masters {
-            node.setslot("NODE", slot);
+            node.setslot("NODE", dst.name.clone(), slot);
         }
     }
 }
@@ -236,9 +236,9 @@ impl Node {
         let conn = Conn::new(self.ip.clone(), self.port.clone());
         conn.forget(&*node.name);
     }
-    pub fn setslot(&self, state: &str, slot: usize) {
+    pub fn setslot(&self, state: &str, nodeid: String, slot: usize) {
         let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.setslot(state, slot, &*self.name);
+        conn.setslot(state, slot, &*nodeid);
     }
     fn keysinslot(&self, slot: usize) -> Option<Vec<String>> {
         let conn = Conn::new(self.ip.clone(), self.port.clone());
