@@ -205,7 +205,7 @@ fn spread(nodes: &mut HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {
                 return Some(target);
             }
             let node = v.pop().unwrap();
-            println!("{:?} {} {}", &node, target.len(), n);
+            // println!("{:?} {} {}", &node, target.len(), n);
             target.push(node);
         }
     }

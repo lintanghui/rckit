@@ -47,7 +47,7 @@ impl fmt::Debug for Node {
         )
     }
 }
-#[derive(Clone)]
+
 pub struct Node {
     pub name: String,
     pub ip: String,
@@ -55,6 +55,20 @@ pub struct Node {
     role: Option<Role>,
     pub slaveof: Option<String>,
     pub slots: Option<Vec<usize>>,
+    conn: Option<Conn>,
+}
+impl Clone for Node {
+    fn clone(&self) -> Node {
+        Node {
+            conn: None,
+            name: self.name.clone(),
+            ip: self.ip.clone(),
+            port: self.port.clone(),
+            role: self.role.clone(),
+            slaveof: self.slaveof.clone(),
+            slots: self.slots.clone(),
+        }
+    }
 }
 #[derive(Debug)]
 pub struct Cluster {
@@ -154,8 +168,8 @@ impl Cluster {
                 if n.name == node.name {
                     continue;
                 }
-                if Some(node.name.to_string()) == node.slaveof {
-                    // todo forget slave
+                if Some(node.name.to_string()) == n.slaveof {
+                    // todo forget slav
                     continue;
                 }
                 println!("node {:?} forget {:?}", n, node);
@@ -183,31 +197,34 @@ impl Cluster {
                 None => break,
             }
         }
-        let masters: Vec<&Node> = self
-            .nodes
-            .iter()
-            .filter(|&x| x.role == Some(Role::master) && x.name != src.name)
-            .collect();
-        for node in masters {
-            node.setslot("NODE", dst.name.clone(), slot);
-        }
+        src.setslot("NODE", dst.name.clone(), slot);
+        dst.setslot("NODE", dst.name.clone(), slot);
     }
 }
 
 impl Node {
     pub fn new(addr: &[u8]) -> AsResult<Node> {
         let content = String::from_utf8_lossy(addr);
-        let mut items: Vec<&str> = content.split(COLON_STR).collect();
+        let items: Vec<&str> = content.split(COLON_STR).collect();
         if items.len() != 2 {
             Err(Error::BadAddr)
         } else {
+            let ip = items[0];
+            let port = items[1];
+
+            let con = if ip != "" {
+                Some(Conn::new(ip.to_string(), port.to_string()))
+            } else {
+                None
+            };
             Ok(Node {
                 name: str::from_utf8(addr).unwrap().to_string(),
                 role: None,
-                port: items.pop().unwrap().to_string(),
-                ip: items.pop().unwrap().to_string(),
+                port: port.to_string(),
+                ip: ip.to_string(),
                 slaveof: None,
                 slots: None,
+                conn: con,
             })
         }
     }
@@ -215,38 +232,66 @@ impl Node {
         self.role = Some(role);
     }
     pub fn set_slave(&self) {
-        let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.set_slave(self.slaveof.clone().unwrap());
+        if let Some(conn) = &self.conn {
+            conn.set_slave(self.slaveof.clone().unwrap());
+        } else {
+            let conn = Conn::new(self.ip.clone(), self.port.clone());
+            conn.set_slave(self.slaveof.clone().unwrap());
+        }
     }
     pub fn addr(&self) -> String {
         self.ip.clone() + ":" + &*self.port
     }
     pub fn add_slots(&self, slots: &[usize]) {
-        let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.add_slots(slots);
+        if let Some(conn) = &self.conn {
+            conn.add_slots(slots);
+        } else {
+            let conn = Conn::new(self.ip.clone(), self.port.clone());
+            conn.add_slots(slots);
+        }
     }
     pub fn nodes(&self) -> Vec<Node> {
-        let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.nodes().expect("get nodes from node fail")
+        if let Some(conn) = &self.conn {
+            conn.nodes().expect("get nodes from node fail")
+        } else {
+            let conn = Conn::new(self.ip.clone(), self.port.clone());
+            conn.nodes().expect("get nodes from node fail")
+        }
     }
     fn is_master(&self) -> bool {
         self.role == Some(Role::master)
     }
     pub fn forget(&self, node: &Node) {
-        let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.forget(&*node.name);
+        if let Some(conn) = &self.conn {
+            conn.forget(&*node.name);
+        } else {
+            let conn = Conn::new(self.ip.clone(), self.port.clone());
+            conn.forget(&*node.name);
+        }
     }
     pub fn setslot(&self, state: &str, nodeid: String, slot: usize) {
-        let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.setslot(state, slot, &*nodeid);
+        if let Some(conn) = &self.conn {
+            conn.setslot(state, slot, &*nodeid);
+        } else {
+            let conn = Conn::new(self.ip.clone(), self.port.clone());
+            conn.setslot(state, slot, &*nodeid);
+        }
     }
     fn keysinslot(&self, slot: usize) -> Option<Vec<String>> {
-        let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.keyinslots(slot, 100)
+        if let Some(conn) = &self.conn {
+            conn.keyinslots(slot, 100)
+        } else {
+            let conn = Conn::new(self.ip.clone(), self.port.clone());
+            conn.keyinslots(slot, 100)
+        }
     }
     fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {
-        let conn = Conn::new(self.ip.clone(), self.port.clone());
-        conn.migrate(dstip, dstport, key);
+        if let Some(conn) = &self.conn {
+            conn.migrate(dstip, dstport, key);
+        } else {
+            let conn = Conn::new(self.ip.clone(), self.port.clone());
+            conn.migrate(dstip, dstport, key);
+        }
     }
 }
 #[derive(Debug)]

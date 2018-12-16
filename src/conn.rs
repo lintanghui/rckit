@@ -1,11 +1,30 @@
 use cluster::{Error, Node, Role};
-use redis::Commands;
+use redis::Connection;
 use std::collections::HashMap;
-#[derive(Debug)]
+use std::fmt;
+use std::{thread, time};
+
 pub struct Conn {
     ip: String,
     port: String,
+    con: Connection,
     client: redis::Client,
+}
+impl fmt::Debug for Conn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ip {},port {}", self.ip, self.port)
+    }
+}
+impl Clone for Conn {
+    fn clone(&self) -> Conn {
+        let con = self.client.get_connection().unwrap();
+        Conn {
+            ip: self.ip.clone(),
+            port: self.port.clone(),
+            con: con,
+            client: self.client.clone(),
+        }
+    }
 }
 #[test]
 fn test_conn() {
@@ -24,49 +43,46 @@ impl Conn {
         let addr = "redis://".to_string() + &ip + ":" + &port;
 
         let client = redis::Client::open(&*addr).expect("open redis err");
+        let con = client.get_connection().unwrap();
         Conn {
             ip,
             port,
+            con: con,
             client: client,
         }
     }
     pub fn add_slots(&self, slots: &[usize]) {
-        let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("cluster")
             .arg("addslots")
             .arg(slots)
-            .query(&con)
+            .query(&self.con)
             .expect("add slots err");
     }
     pub fn set_config_epoch(&self, epoch: usize) {
-        let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("CLUSTER")
             .arg("SET-CONFIG-EPOCH")
             .arg(epoch)
-            .query(&con)
+            .query(&self.con)
             .expect("set config epoch err");
     }
     pub fn meet(&self, ip: &str, port: &str) {
-        let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("CLUSTER")
             .arg("MEET")
             .arg(ip)
             .arg(port)
-            .query(&con)
+            .query(&self.con)
             .unwrap();
     }
     pub fn set_slave(&self, node_id: String) {
         println!("set {} to replicate {}", self.ip, node_id);
-        let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("CLUSTER")
             .arg("REPLICATE")
             .arg(&*node_id)
-            .query(&con)
+            .query(&self.con)
             .expect("cluster replicate err");
     }
     pub fn node_info(&self) -> HashMap<String, String> {
-        let con = self.client.get_connection().unwrap();
-        let info: String = redis::cmd("CLUSTER").arg("INFO").query(&con).unwrap();
+        let info: String = redis::cmd("CLUSTER").arg("INFO").query(&self.con).unwrap();
         let infos: Vec<String> = info.split("\r\n").map(|x| x.to_string()).collect();
         let mut node_infos = HashMap::new();
         for mut info in infos.into_iter() {
@@ -78,8 +94,7 @@ impl Conn {
         node_infos
     }
     pub fn nodes(&self) -> Result<Vec<Node>, Error> {
-        let con = self.client.get_connection().unwrap();
-        let info: String = redis::cmd("CLUSTER").arg("NODES").query(&con).unwrap();
+        let info: String = redis::cmd("CLUSTER").arg("NODES").query(&self.con).unwrap();
         // let infos: Vec<String> = info.split("\n").map(|x| x.to_string()).collect();
         let mut nodes: Vec<Node> = Vec::new();
         for mut info in info.lines() {
@@ -89,7 +104,7 @@ impl Conn {
             }
             let mut slots = vec![];
             let addr = kv[1].split('@').next().expect("must contain addr");
-
+            println!("addr {}", addr);
             let mut node = Node::new(addr.as_bytes()).unwrap();
             if kv[2].contains("master") {
                 node.set_role(Role::master);
@@ -123,21 +138,19 @@ impl Conn {
         Ok(())
     }
     pub fn forget(&self, node: &str) {
-        let con = self.client.get_connection().unwrap();
         let _: () = redis::cmd("CLUSTER")
             .arg("FORGET")
             .arg(node)
-            .query(&con)
+            .query(&self.con)
             .unwrap();
     }
     pub fn setslot(&self, state: &str, slot: usize, nodeid: &str) {
-        let con = self.client.get_connection().unwrap();
         if let Ok(()) = redis::cmd("CLUSTER")
             .arg("SETSLOT")
             .arg(slot)
             .arg(state)
             .arg(nodeid)
-            .query(&con)
+            .query(&self.con)
         {
             ();
         } else {
@@ -145,7 +158,6 @@ impl Conn {
         };
     }
     pub fn migrate(&self, ip: &str, port: &str, key: Vec<String>) {
-        let con = self.client.get_connection().unwrap();
         println!("migrate keys {:?}", key);
         let _: () = redis::cmd("MIGRATE")
             .arg(ip)
@@ -155,7 +167,7 @@ impl Conn {
             .arg(5000)
             .arg("KEYS")
             .arg(key)
-            .query(&con)
+            .query(&self.con)
             .unwrap();
     }
     pub fn keyinslots(&self, slot: usize, count: usize) -> Option<Vec<String>> {
