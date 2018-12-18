@@ -1,6 +1,7 @@
 use conn::Conn;
 use std::collections::HashMap;
 use std::fmt;
+use std::rc::Rc;
 use std::result;
 use std::str;
 use util;
@@ -47,7 +48,7 @@ impl fmt::Debug for Node {
         )
     }
 }
-
+#[derive(Clone)]
 pub struct Node {
     pub name: String,
     pub ip: String,
@@ -55,21 +56,21 @@ pub struct Node {
     role: Option<Role>,
     pub slaveof: Option<String>,
     pub slots: Option<Vec<usize>>,
-    conn: Option<Conn>,
+    conn: Rc<Option<Conn>>,
 }
-impl Clone for Node {
-    fn clone(&self) -> Node {
-        Node {
-            conn: None,
-            name: self.name.clone(),
-            ip: self.ip.clone(),
-            port: self.port.clone(),
-            role: self.role.clone(),
-            slaveof: self.slaveof.clone(),
-            slots: self.slots.clone(),
-        }
-    }
-}
+// impl Clone for Node {
+//     fn clone(&self) -> Node {
+//         Node {
+//             conn: None,
+//             name: self.name.clone(),
+//             ip: self.ip.clone(),
+//             port: self.port.clone(),
+//             role: self.role.clone(),
+//             slaveof: self.slaveof.clone(),
+//             slots: self.slots.clone(),
+//         }
+//     }
+// }
 #[derive(Debug)]
 pub struct Cluster {
     pub nodes: Vec<Node>,
@@ -156,7 +157,7 @@ impl Cluster {
                 let migrate = &slots[start..start + count];
                 // todo:MIGRATE DATA
                 for slot in migrate.iter() {
-                    self.migrate_slot(del_node, node, *slot);
+                    migrate_slot(del_node, node, *slot);
                 }
                 start = start + count;
                 println!("stop migrate from {:?} to {:?}", del_node, node);
@@ -187,21 +188,20 @@ impl Cluster {
         }
         None
     }
-
-    fn migrate_slot(&self, src: &Node, dst: &Node, slot: usize) {
-        dst.setslot("IMPORTING", src.name.clone(), slot);
-        src.setslot("MIGRATING", dst.name.clone(), slot);
-        loop {
-            match src.keysinslot(slot) {
-                Some(key) => src.migrate(&*dst.ip, &*dst.port, key),
-                None => break,
-            }
-        }
-        src.setslot("NODE", dst.name.clone(), slot);
-        dst.setslot("NODE", dst.name.clone(), slot);
-    }
 }
 
+pub fn migrate_slot(src: &Node, dst: &Node, slot: usize) {
+    dst.setslot("IMPORTING", src.name.clone(), slot);
+    src.setslot("MIGRATING", dst.name.clone(), slot);
+    loop {
+        match src.keysinslot(slot) {
+            Some(key) => src.migrate(&*dst.ip, &*dst.port, key),
+            None => break,
+        }
+    }
+    src.setslot("NODE", dst.name.clone(), slot);
+    dst.setslot("NODE", dst.name.clone(), slot);
+}
 impl Node {
     pub fn new(addr: &[u8]) -> AsResult<Node> {
         let content = String::from_utf8_lossy(addr);
@@ -224,7 +224,7 @@ impl Node {
                 ip: ip.to_string(),
                 slaveof: None,
                 slots: None,
-                conn: con,
+                conn: Rc::new(con),
             })
         }
     }
@@ -232,7 +232,7 @@ impl Node {
         self.role = Some(role);
     }
     pub fn set_slave(&self) {
-        if let Some(conn) = &self.conn {
+        if let Some(conn) = self.conn.as_ref() {
             conn.set_slave(self.slaveof.clone().unwrap());
         } else {
             let conn = Conn::new(self.ip.clone(), self.port.clone());
@@ -243,7 +243,7 @@ impl Node {
         self.ip.clone() + ":" + &*self.port
     }
     pub fn add_slots(&self, slots: &[usize]) {
-        if let Some(conn) = &self.conn {
+        if let Some(conn) = self.conn.as_ref() {
             conn.add_slots(slots);
         } else {
             let conn = Conn::new(self.ip.clone(), self.port.clone());
@@ -251,18 +251,21 @@ impl Node {
         }
     }
     pub fn nodes(&self) -> Vec<Node> {
-        if let Some(conn) = &self.conn {
+        if let Some(conn) = self.conn.as_ref() {
             conn.nodes().expect("get nodes from node fail")
         } else {
             let conn = Conn::new(self.ip.clone(), self.port.clone());
             conn.nodes().expect("get nodes from node fail")
         }
     }
+    pub fn getslots(&self) -> Vec<usize> {
+        vec![]
+    }
     fn is_master(&self) -> bool {
         self.role == Some(Role::master)
     }
     pub fn forget(&self, node: &Node) {
-        if let Some(conn) = &self.conn {
+        if let Some(conn) = self.conn.as_ref() {
             conn.forget(&*node.name);
         } else {
             let conn = Conn::new(self.ip.clone(), self.port.clone());
@@ -270,7 +273,7 @@ impl Node {
         }
     }
     pub fn setslot(&self, state: &str, nodeid: String, slot: usize) {
-        if let Some(conn) = &self.conn {
+        if let Some(conn) = self.conn.as_ref() {
             conn.setslot(state, slot, &*nodeid);
         } else {
             let conn = Conn::new(self.ip.clone(), self.port.clone());
@@ -278,7 +281,7 @@ impl Node {
         }
     }
     fn keysinslot(&self, slot: usize) -> Option<Vec<String>> {
-        if let Some(conn) = &self.conn {
+        if let Some(conn) = self.conn.as_ref() {
             conn.keyinslots(slot, 100)
         } else {
             let conn = Conn::new(self.ip.clone(), self.port.clone());
@@ -286,7 +289,7 @@ impl Node {
         }
     }
     fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {
-        if let Some(conn) = &self.conn {
+        if let Some(conn) = self.conn.as_ref() {
             conn.migrate(dstip, dstport, key);
         } else {
             let conn = Conn::new(self.ip.clone(), self.port.clone());

@@ -74,7 +74,31 @@ pub fn run() {
                         .takes_value(true),
                 ),
         )
-        .get_matches();
+        .subcommand(
+            SubCommand::with_name("migrate")
+            .about("migrate slots from src to dst")
+            .arg(
+                Arg::with_name("dst")
+                    .short("d")
+                    .help("-d <node>")
+                    .required(true)
+                    .takes_value(true),
+                )
+            .arg(
+                Arg::with_name("src")
+                .short("s")
+                .help("-s <node>")
+                .required(true)
+                .takes_value(true),
+                )
+            .arg(
+                Arg::with_name("count")
+                .help("-c count")
+                .short("c")
+                .required(true)
+                .takes_value(true),
+            ),
+        ).get_matches();
     if let Some(sub_m) = matches.subcommand_matches("create") {
         let slave_count = clap::value_t!(sub_m.value_of("replicate"), usize).unwrap();
         let mut master_count = clap::value_t!(sub_m.value_of("master"), usize).unwrap();
@@ -134,6 +158,26 @@ pub fn run() {
 
             println!("delete node {:?}", del_node);
             cluster.delete_node(del_node);
+        }
+    }
+    if let Some(sub_m) = matches.subcommand_matches("migrate") {
+        let src = sub_m.value_of("src").expect("src node  nil");
+        let dst = sub_m.value_of("dst").expect("dst node nil");
+        let count = clap::value_t!(sub_m.value_of("count"), usize).expect("slot count nil");
+        let src_node = Node::new(src.as_bytes()).unwrap();
+        let dst_node = Node::new(dst.as_bytes()).unwrap();
+        let mut slots = src_node.getslots();
+        let mut i = 0;
+        loop {
+            if let Some(slot) = slots.pop() {
+                i += 1;
+                cluster::migrate_slot(&src_node, &dst_node, slot);
+            } else {
+                return;
+            }
+            if i >= count {
+                return;
+            }
         }
     }
 }

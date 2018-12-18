@@ -2,12 +2,13 @@ use cluster::{Error, Node, Role};
 use redis::Connection;
 use std::collections::HashMap;
 use std::fmt;
+use std::rc::Rc;
 use std::{thread, time};
-
+#[derive(Clone)]
 pub struct Conn {
     ip: String,
     port: String,
-    con: Connection,
+    con: Rc<Connection>,
     client: redis::Client,
 }
 impl fmt::Debug for Conn {
@@ -15,17 +16,7 @@ impl fmt::Debug for Conn {
         write!(f, "ip {},port {}", self.ip, self.port)
     }
 }
-impl Clone for Conn {
-    fn clone(&self) -> Conn {
-        let con = self.client.get_connection().unwrap();
-        Conn {
-            ip: self.ip.clone(),
-            port: self.port.clone(),
-            con: con,
-            client: self.client.clone(),
-        }
-    }
-}
+
 #[test]
 fn test_conn() {
     let conn = Conn::new("127.0.0.1".to_string(), "7001".to_string());
@@ -47,7 +38,7 @@ impl Conn {
         Conn {
             ip,
             port,
-            con: con,
+            con: Rc::new(con),
             client: client,
         }
     }
@@ -55,14 +46,14 @@ impl Conn {
         let _: () = redis::cmd("cluster")
             .arg("addslots")
             .arg(slots)
-            .query(&self.con)
+            .query(self.con.as_ref())
             .expect("add slots err");
     }
     pub fn set_config_epoch(&self, epoch: usize) {
         let _: () = redis::cmd("CLUSTER")
             .arg("SET-CONFIG-EPOCH")
             .arg(epoch)
-            .query(&self.con)
+            .query(self.con.as_ref())
             .expect("set config epoch err");
     }
     pub fn meet(&self, ip: &str, port: &str) {
@@ -70,7 +61,7 @@ impl Conn {
             .arg("MEET")
             .arg(ip)
             .arg(port)
-            .query(&self.con)
+            .query(self.con.as_ref())
             .unwrap();
     }
     pub fn set_slave(&self, node_id: String) {
@@ -78,11 +69,14 @@ impl Conn {
         let _: () = redis::cmd("CLUSTER")
             .arg("REPLICATE")
             .arg(&*node_id)
-            .query(&self.con)
+            .query(self.con.as_ref())
             .expect("cluster replicate err");
     }
     pub fn node_info(&self) -> HashMap<String, String> {
-        let info: String = redis::cmd("CLUSTER").arg("INFO").query(&self.con).unwrap();
+        let info: String = redis::cmd("CLUSTER")
+            .arg("INFO")
+            .query(self.con.as_ref())
+            .unwrap();
         let infos: Vec<String> = info.split("\r\n").map(|x| x.to_string()).collect();
         let mut node_infos = HashMap::new();
         for mut info in infos.into_iter() {
@@ -94,7 +88,10 @@ impl Conn {
         node_infos
     }
     pub fn nodes(&self) -> Result<Vec<Node>, Error> {
-        let info: String = redis::cmd("CLUSTER").arg("NODES").query(&self.con).unwrap();
+        let info: String = redis::cmd("CLUSTER")
+            .arg("NODES")
+            .query(self.con.as_ref())
+            .unwrap();
         // let infos: Vec<String> = info.split("\n").map(|x| x.to_string()).collect();
         let mut nodes: Vec<Node> = Vec::new();
         for mut info in info.lines() {
@@ -141,7 +138,7 @@ impl Conn {
         let _: () = redis::cmd("CLUSTER")
             .arg("FORGET")
             .arg(node)
-            .query(&self.con)
+            .query(self.con.as_ref())
             .unwrap();
     }
     pub fn setslot(&self, state: &str, slot: usize, nodeid: &str) {
@@ -150,7 +147,7 @@ impl Conn {
             .arg(slot)
             .arg(state)
             .arg(nodeid)
-            .query(&self.con)
+            .query(self.con.as_ref())
         {
             ();
         } else {
@@ -167,7 +164,7 @@ impl Conn {
             .arg(5000)
             .arg("KEYS")
             .arg(key)
-            .query(&self.con)
+            .query(self.con.as_ref())
             .unwrap();
     }
     pub fn keyinslots(&self, slot: usize, count: usize) -> Option<Vec<String>> {
