@@ -95,13 +95,13 @@ impl Conn {
         // let infos: Vec<String> = info.split("\n").map(|x| x.to_string()).collect();
         let mut nodes: Vec<Node> = Vec::new();
         for mut info in info.lines() {
+            println!("line {}", info);
             let kv: Vec<String> = info.split(" ").map(|x| x.to_string()).collect();
             if kv.len() < 8 {
                 return Err(Error::BadCluster);
             }
             let mut slots = vec![];
             let addr = kv[1].split('@').next().expect("must contain addr");
-            println!("addr {}", addr);
             let mut node = Node::new(addr.as_bytes()).unwrap();
             if kv[2].contains("master") {
                 node.set_role(Role::master);
@@ -112,7 +112,7 @@ impl Conn {
                 node.slaveof = Some(kv[3].clone());
             }
             for content in &kv[8..] {
-                if content.contains("->") || content.contains("->") {
+                if content.contains("->-") || content.contains("-<-") {
                     continue;
                 }
                 let mut scope: Vec<&str> = content.split("-").collect();
@@ -125,7 +125,7 @@ impl Conn {
                     }
                 }
             }
-            node.slots = Some(slots);
+            node.set_slots(slots);
             node.name = kv[0].clone();
             nodes.push(node);
         }
@@ -142,17 +142,16 @@ impl Conn {
             .unwrap();
     }
     pub fn setslot(&self, state: &str, slot: usize, nodeid: &str) {
-        if let Ok(()) = redis::cmd("CLUSTER")
+        match redis::cmd("CLUSTER")
             .arg("SETSLOT")
             .arg(slot)
             .arg(state)
             .arg(nodeid)
             .query(self.con.as_ref())
         {
-            ();
-        } else {
-            println!("set slot{} to node{} err", slot, nodeid);
-        };
+            Ok(()) => (),
+            Err(err) => println!("set slot{} to node{} err{}", slot, nodeid, err),
+        }
     }
     pub fn migrate(&self, ip: &str, port: &str, key: Vec<String>) {
         println!("migrate keys {:?}", key);

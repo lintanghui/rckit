@@ -164,10 +164,13 @@ pub fn run() {
         let src = sub_m.value_of("src").expect("src node  nil");
         let dst = sub_m.value_of("dst").expect("dst node nil");
         let count = clap::value_t!(sub_m.value_of("count"), usize).expect("slot count nil");
-        let src_node = Node::new(src.as_bytes()).unwrap();
-        let dst_node = Node::new(dst.as_bytes()).unwrap();
-        let mut slots = src_node.getslots();
+        let mut src_node = Node::new(src.as_bytes()).unwrap();
+        let mut dst_node = Node::new(dst.as_bytes()).unwrap();
+        src_node.connect();
+        dst_node.connect();
+        let mut slots = src_node.slots();
         let mut i = 0;
+        println!("slots to migrate {}", slots.len());
         loop {
             if let Some(slot) = slots.pop() {
                 i += 1;
