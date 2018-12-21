@@ -1,4 +1,5 @@
 use conn::Conn;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -36,11 +37,7 @@ impl PartialEq for Node {
 }
 impl fmt::Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let slot_num;
-        match &self.slots {
-            Some(slots) => slot_num = slots.len(),
-            None => slot_num = 0,
-        }
+        let slot_num = self.slots.borrow().len();
         write!(
             f,
             "Node{{name: {:?} ,ip: {},port: {},slots: {},role:{:?},slaveof:{:?} }}",
@@ -48,16 +45,7 @@ impl fmt::Debug for Node {
         )
     }
 }
-#[derive(Clone)]
-pub struct Node {
-    pub name: String,
-    pub ip: String,
-    pub port: String,
-    role: Option<Role>,
-    pub slaveof: Option<String>,
-    pub slots: Option<Vec<usize>>,
-    conn: Rc<Option<Conn>>,
-}
+
 // impl Clone for Node {
 //     fn clone(&self) -> Node {
 //         Node {
@@ -91,29 +79,22 @@ impl Cluster {
             let nodes = conn.nodes().expect("get cluster nodes err");
             println!("node{:?}  {:?}", node.port, nodes.len());
             for node in nodes.into_iter() {
-                match node.slots.as_ref() {
-                    Some(slots) => {
-                        for slot in slots {
-                            if node_slot.contains_key(&slot) {
-                                if node_slot.get(&slot).expect("get slots err").clone()
-                                    != node.clone()
-                                {
-                                    println!(
-                                        "slot {} want {:?} get {:?}",
-                                        slot,
-                                        node_slot.get(&slot).unwrap().name,
-                                        node.name
-                                    );
-                                    return false;
-                                }
-                                slot_num = slot_num + 1;
-                            } else {
-                                slot_num = slot_num + 1;
-                                node_slot.insert(slot.clone(), node.clone());
-                            }
+                for slot in node.slots.clone().into_inner() {
+                    if node_slot.contains_key(&slot) {
+                        if node_slot.get(&slot).expect("get slots err").clone() != node.clone() {
+                            println!(
+                                "slot {} want {:?} get {:?}",
+                                slot,
+                                node_slot.get(&slot).unwrap().name,
+                                node.name
+                            );
+                            return false;
                         }
+                        slot_num = slot_num + 1;
+                    } else {
+                        slot_num = slot_num + 1;
+                        node_slot.insert(slot.clone(), node.clone());
                     }
-                    None => println!("not slot in this node {:?}", node),
                 }
             }
             println!("slot num {}", slot_num);
@@ -147,7 +128,7 @@ impl Cluster {
                 .iter()
                 .filter(|&x| x.role == Some(Role::master) && x.name != del_node.name)
                 .collect();
-            let slots = del_node.slots.as_ref().unwrap();
+            let slots = del_node.slots.borrow();
             let slot_count = slots.len();
             let mut dispatch = util::divide(slot_count, nodes.len());
             let mut start = 0;
@@ -202,6 +183,16 @@ pub fn migrate_slot(src: &Node, dst: &Node, slot: usize) {
     src.setslot("NODE", dst.name.clone(), slot);
     dst.setslot("NODE", dst.name.clone(), slot);
 }
+#[derive(Clone)]
+pub struct Node {
+    pub name: String,
+    pub ip: String,
+    pub port: String,
+    role: Option<Role>,
+    pub slaveof: Option<String>,
+    slots: RefCell<Vec<usize>>,
+    conn: Rc<Option<Conn>>,
+}
 impl Node {
     pub fn new(addr: &[u8]) -> AsResult<Node> {
         let content = String::from_utf8_lossy(addr);
@@ -223,9 +214,18 @@ impl Node {
                 port: port.to_string(),
                 ip: ip.to_string(),
                 slaveof: None,
-                slots: None,
+                slots: RefCell::new(vec![]),
                 conn: Rc::new(con),
             })
+        }
+    }
+    pub fn connect(&mut self) {
+        for node in &self.nodes() {
+            if node.ip == self.ip && node.port == self.port {
+                self.name = node.name.clone();
+                self.slaveof = node.slaveof.clone();
+                self.slots = node.slots.clone();
+            }
         }
     }
     pub fn set_role(&mut self, role: Role) {
@@ -258,10 +258,13 @@ impl Node {
             conn.nodes().expect("get nodes from node fail")
         }
     }
-    pub fn getslots(&self) -> Vec<usize> {
-        vec![]
+    pub fn set_slots(&mut self, slots: Vec<usize>) {
+        self.slots = RefCell::new(slots)
     }
-    fn is_master(&self) -> bool {
+    pub fn slots(&self) -> Vec<usize> {
+        self.slots.clone().into_inner()
+    }
+    pub fn is_master(&self) -> bool {
         self.role == Some(Role::master)
     }
     pub fn forget(&self, node: &Node) {

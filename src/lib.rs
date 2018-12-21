@@ -179,6 +179,7 @@ pub fn run() {
             let mut i = 0;
             loop {
                 let slot = slots[i];
+
                 i += 1;
                 cluster::migrate_slot(&src, dst, slot);
                 if i >= count {
