@@ -1,5 +1,4 @@
 use cluster::{Cluster, Error, Node, Role};
-use conn::Conn;
 use std::collections::HashMap;
 use util;
 #[test]
@@ -116,8 +115,7 @@ impl Create {
     pub fn set_config_epoch(&self) {
         let epoch = 1;
         for node in &self.master {
-            let conn = Conn::new(node.ip.clone(), node.port.clone());
-            conn.set_config_epoch(epoch);
+            node.set_config_epoch(epoch);
         }
     }
     pub fn join_cluster(&mut self) {
@@ -125,9 +123,8 @@ impl Create {
             return;
         }
         let first_node = self.cluster.nodes.pop().unwrap();
-        let conn = Conn::new(first_node.ip.clone(), first_node.port.clone());
         for node in &self.cluster.nodes {
-            conn.meet(&*node.ip, &*node.port);
+            first_node.meet(&*node.ip, &*node.port);
         }
     }
     pub fn set_slave(&self) -> Result<(), Error> {

@@ -1,20 +1,18 @@
 use cluster::{Cluster, Error, Node, Role};
-use conn::Conn;
 use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Add {
     origin: String,
     pub cluster: Cluster,
-    conn: Conn,
+    node: Node,
     slave_master: HashMap<String, String>,
 }
 
 impl Add {
     pub fn new(origin: String, addrs: Vec<String>) -> Result<Add, Error> {
-        let addr = origin.clone();
-        let items: Vec<&str> = addr.split(":").collect();
-        let conn = Conn::new(items[0].to_string(), items[1].to_string());
-        conn.health().unwrap();
+        let mut node = Node::new(origin.as_bytes()).unwrap();
+        node.connect();
+        node.health().unwrap();
         let mut nodes = Vec::new();
         let mut sm = HashMap::new();
         for n in addrs.into_iter() {
@@ -34,12 +32,12 @@ impl Add {
             origin,
             slave_master: sm,
             cluster: Cluster::new(nodes),
-            conn,
+            node: node,
         })
     }
     pub fn add_node(&self) -> Result<(), Error> {
         for node in &self.cluster.nodes {
-            self.conn.meet(&*node.ip, &*node.port);
+            self.node.meet(&*node.ip, &*node.port);
         }
         Ok(())
     }

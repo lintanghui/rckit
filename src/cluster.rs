@@ -1,4 +1,4 @@
-use conn::Conn;
+use redis::Connection;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -46,19 +46,6 @@ impl fmt::Debug for Node {
     }
 }
 
-// impl Clone for Node {
-//     fn clone(&self) -> Node {
-//         Node {
-//             conn: None,
-//             name: self.name.clone(),
-//             ip: self.ip.clone(),
-//             port: self.port.clone(),
-//             role: self.role.clone(),
-//             slaveof: self.slaveof.clone(),
-//             slots: self.slots.clone(),
-//         }
-//     }
-// }
 #[derive(Debug)]
 pub struct Cluster {
     pub nodes: Vec<Node>,
@@ -75,8 +62,7 @@ impl Cluster {
         let mut node_slot: HashMap<usize, Node> = HashMap::new();
         for node in &self.nodes {
             let mut slot_num = 0;
-            let conn = Conn::new(node.ip.clone(), node.port.clone());
-            let nodes = conn.nodes().expect("get cluster nodes err");
+            let nodes = node.nodes();
             println!("node{:?}  {:?}", node.port, nodes.len());
             for node in nodes.into_iter() {
                 for slot in node.slots.clone().into_inner() {
@@ -107,13 +93,12 @@ impl Cluster {
     }
     pub fn check(&mut self) -> Result<(), Error> {
         for mut node in self.nodes.iter_mut() {
-            let conn = Conn::new(node.ip.clone(), node.port.clone());
-            let nodes_info = conn.node_info();
+            let nodes_info = node.info();
             assert_eq!(
                 nodes_info.get("cluster_known_nodes").cloned(),
                 Some("1".to_string())
             );
-            let mut nodes = try!(conn.nodes());
+            let mut nodes = node.nodes();
             let n = nodes.pop().unwrap();
             println!("get node {:?}", n);
             node.name = n.name;
@@ -191,7 +176,9 @@ pub struct Node {
     role: Option<Role>,
     pub slaveof: Option<String>,
     slots: RefCell<Vec<usize>>,
-    conn: Rc<Option<Conn>>,
+    migrating: HashMap<usize, String>,
+    importing: HashMap<usize, String>,
+    conn: Rc<Option<Connection>>,
 }
 impl Node {
     pub fn new(addr: &[u8]) -> AsResult<Node> {
@@ -204,7 +191,13 @@ impl Node {
             let port = items[1];
 
             let con = if ip != "" {
-                Some(Conn::new(ip.to_string(), port.to_string()))
+                let addr = "redis://".to_string() + ip + ":" + port;
+                Some(
+                    redis::Client::open(&*addr)
+                        .unwrap()
+                        .get_connection()
+                        .unwrap(),
+                )
             } else {
                 None
             };
@@ -215,6 +208,8 @@ impl Node {
                 ip: ip.to_string(),
                 slaveof: None,
                 slots: RefCell::new(vec![]),
+                migrating: HashMap::new(),
+                importing: HashMap::new(),
                 conn: Rc::new(con),
             })
         }
@@ -228,15 +223,33 @@ impl Node {
             }
         }
     }
+    pub fn info(&self) -> HashMap<String, String> {
+        let mut node_infos = HashMap::new();
+        if let Some(conn) = self.conn.as_ref() {
+            let info: String = redis::cmd("CLUSTER").arg("INFO").query(conn).unwrap();
+            let infos: Vec<String> = info.split("\r\n").map(|x| x.to_string()).collect();
+
+            for mut info in infos.into_iter() {
+                let kv: Vec<String> = info.split(":").map(|x| x.to_string()).collect();
+                if kv.len() == 2 {
+                    node_infos.insert(kv[0].clone(), kv[1].clone());
+                }
+            }
+        }
+        node_infos
+    }
     pub fn set_role(&mut self, role: Role) {
         self.role = Some(role);
     }
     pub fn set_slave(&self) {
+        let node_id = self.slaveof.clone().unwrap();
+        println!("set {}  replicate to {}", self.ip, node_id);
         if let Some(conn) = self.conn.as_ref() {
-            conn.set_slave(self.slaveof.clone().unwrap());
-        } else {
-            let conn = Conn::new(self.ip.clone(), self.port.clone());
-            conn.set_slave(self.slaveof.clone().unwrap());
+            let _: () = redis::cmd("CLUSTER")
+                .arg("REPLICATE")
+                .arg(&*node_id)
+                .query(conn)
+                .expect("cluster replicate err");
         }
     }
     pub fn addr(&self) -> String {
@@ -244,22 +257,89 @@ impl Node {
     }
     pub fn add_slots(&self, slots: &[usize]) {
         if let Some(conn) = self.conn.as_ref() {
-            conn.add_slots(slots);
-        } else {
-            let conn = Conn::new(self.ip.clone(), self.port.clone());
-            conn.add_slots(slots);
+            let _: () = redis::cmd("cluster")
+                .arg("addslots")
+                .arg(slots)
+                .query(conn)
+                .expect("add slots err");
+        }
+    }
+    pub fn set_config_epoch(&self, epoch: usize) {
+        if let Some(conn) = self.conn.as_ref() {
+            let _: () = redis::cmd("CLUSTER")
+                .arg("SET-CONFIG-EPOCH")
+                .arg(epoch)
+                .query(conn)
+                .expect("set config epoch err");
         }
     }
     pub fn nodes(&self) -> Vec<Node> {
         if let Some(conn) = self.conn.as_ref() {
-            conn.nodes().expect("get nodes from node fail")
-        } else {
-            let conn = Conn::new(self.ip.clone(), self.port.clone());
-            conn.nodes().expect("get nodes from node fail")
+            let info: String = redis::cmd("CLUSTER").arg("NODES").query(conn).unwrap();
+            // let infos: Vec<String> = info.split("\n").map(|x| x.to_string()).collect();
+            let mut nodes: Vec<Node> = Vec::new();
+            for mut info in info.lines() {
+                let kv: Vec<String> = info.split(" ").map(|x| x.to_string()).collect();
+                if kv.len() < 8 {
+                    return vec![];
+                }
+                let mut slots = vec![];
+                let mut migrating = HashMap::new();
+                let mut importing = HashMap::new();
+                let addr = kv[1].split('@').next().expect("must contain addr");
+                let mut node = Node::new(addr.as_bytes()).unwrap();
+                if kv[2].contains("master") {
+                    node.set_role(Role::master);
+                } else {
+                    node.set_role(Role::slave);
+                }
+                if kv[3] != "-" {
+                    node.slaveof = Some(kv[3].clone());
+                }
+                for content in &kv[8..] {
+                    if content.contains("->-") {
+                        let mut scope: Vec<&str> = content.split("->-").collect();
+                        let slot = scope[0].to_string().parse::<usize>().unwrap();
+                        let nodeid = scope[1];
+                        migrating.insert(slot, nodeid);
+                    }
+                    if content.contains("-<-") {
+                        let mut scope: Vec<&str> = content.split("-<-").collect();
+                        let slot = scope[0].to_string().parse::<usize>().unwrap();
+                        let nodeid = scope[1];
+                        importing.insert(slot, nodeid);
+                    }
+                    let mut scope: Vec<&str> = content.split("-").collect();
+                    let start = scope[0].to_string().parse::<usize>().unwrap();
+                    slots.push(start);
+                    if scope.len() == 2 {
+                        let end = scope[1].to_string().parse::<usize>().unwrap();
+                        for i in (start + 1..end + 1).into_iter() {
+                            slots.push(i);
+                        }
+                    }
+                }
+                node.slots = RefCell::new(slots);
+                node.name = kv[0].clone();
+                nodes.push(node);
+            }
+            return nodes;
         }
+        vec![]
     }
-    pub fn set_slots(&mut self, slots: Vec<usize>) {
-        self.slots = RefCell::new(slots)
+
+    pub fn health(&self) -> Result<(), Error> {
+        Ok(())
+    }
+    pub fn meet(&self, ip: &str, port: &str) {
+        if let Some(conn) = self.conn.as_ref() {
+            let _: () = redis::cmd("CLUSTER")
+                .arg("MEET")
+                .arg(ip)
+                .arg(port)
+                .query(conn)
+                .unwrap();
+        }
     }
     pub fn slots(&self) -> Vec<usize> {
         self.slots.clone().into_inner()
@@ -269,34 +349,51 @@ impl Node {
     }
     pub fn forget(&self, node: &Node) {
         if let Some(conn) = self.conn.as_ref() {
-            conn.forget(&*node.name);
-        } else {
-            let conn = Conn::new(self.ip.clone(), self.port.clone());
-            conn.forget(&*node.name);
+            let _: () = redis::cmd("CLUSTER")
+                .arg("FORGET")
+                .arg(&node.name)
+                .query(conn)
+                .unwrap();
         }
     }
     pub fn setslot(&self, state: &str, nodeid: String, slot: usize) {
         if let Some(conn) = self.conn.as_ref() {
-            conn.setslot(state, slot, &*nodeid);
-        } else {
-            let conn = Conn::new(self.ip.clone(), self.port.clone());
-            conn.setslot(state, slot, &*nodeid);
+            let _: () = redis::cmd("CLUSTER")
+                .arg("SETSLOT")
+                .arg(slot)
+                .arg(state)
+                .arg(&*nodeid)
+                .query(conn)
+                .unwrap();
         }
     }
     fn keysinslot(&self, slot: usize) -> Option<Vec<String>> {
         if let Some(conn) = self.conn.as_ref() {
-            conn.keyinslots(slot, 100)
-        } else {
-            let conn = Conn::new(self.ip.clone(), self.port.clone());
-            conn.keyinslots(slot, 100)
+            let result: Vec<String> = redis::cmd("CLUSTER")
+                .arg("GETKEYSINSLOT")
+                .arg(slot)
+                .arg(100)
+                .query(conn)
+                .unwrap();
+            if result.len() > 0 {
+                return Some(result);
+            }
         }
+        return None;
     }
     fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {
+        println!("migrate keys {:?}", key);
         if let Some(conn) = self.conn.as_ref() {
-            conn.migrate(dstip, dstport, key);
-        } else {
-            let conn = Conn::new(self.ip.clone(), self.port.clone());
-            conn.migrate(dstip, dstport, key);
+            let _: () = redis::cmd("MIGRATE")
+                .arg(dstip)
+                .arg(dstport)
+                .arg("")
+                .arg("0")
+                .arg(5000)
+                .arg("KEYS")
+                .arg(key)
+                .query(conn)
+                .unwrap();
         }
     }
 }

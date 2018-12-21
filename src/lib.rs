@@ -3,7 +3,6 @@ extern crate redis;
 
 mod add;
 mod cluster;
-mod conn;
 mod create;
 mod util;
 
