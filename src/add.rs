@@ -11,8 +11,8 @@ pub struct Add {
 impl Add {
     pub fn new(origin: String, addrs: Vec<String>) -> Result<Add, Error> {
         let mut node = Node::new(origin.as_bytes()).unwrap();
+
         node.connect();
-        node.health().unwrap();
         let mut nodes = Vec::new();
         let mut sm = HashMap::new();
         for n in addrs.into_iter() {

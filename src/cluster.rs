@@ -1,6 +1,6 @@
 use redis::Connection;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 use std::result;
@@ -91,17 +91,13 @@ impl Cluster {
         }
         true
     }
-    pub fn check(&mut self) -> Result<(), Error> {
-        for mut node in self.nodes.iter_mut() {
+    pub fn check(&self) -> Result<(), Error> {
+        for node in &self.nodes {
             let nodes_info = node.info();
             assert_eq!(
                 nodes_info.get("cluster_known_nodes").cloned(),
                 Some("1".to_string())
             );
-            let mut nodes = node.nodes();
-            let n = nodes.pop().unwrap();
-            println!("get node {:?}", n);
-            node.name = n.name;
         }
         Ok(())
     }
@@ -154,6 +150,38 @@ impl Cluster {
         }
         None
     }
+    pub fn fill_slots(&self) {
+        let slots: HashSet<usize> = self
+            .nodes
+            .iter()
+            .filter(|x| x.is_master())
+            .map(|x| x.slots.clone().into_inner())
+            .flatten()
+            .collect();
+        let all_slots: HashSet<usize> = (1..16384).into_iter().collect();
+        let miss = all_slots
+            .difference(&slots)
+            .cloned()
+            .collect::<Vec<usize>>();
+        let mut dist = util::divide(miss.len(), self.nodes.len());
+        let mut idx = 0;
+        for node in self.nodes.iter().filter(|x| x.is_master()) {
+            // let slot = miss
+            //     .iter()
+            //     .map(|x| x.clone())
+            //     .take(dist.pop().unwrap())
+            //     .collect::<Vec<usize>>();
+            let num = dist.pop().unwrap();
+            let slots = &miss[idx..idx + num];
+            node.add_slots(slots);
+            idx += num;
+        }
+    }
+    pub fn fix_slots(&self) {
+        for master in self.nodes.iter().filter(|x| x.is_master()) {
+            master.fix_node();
+        }
+    }
 }
 
 pub fn migrate_slot(src: &Node, dst: &Node, slot: usize) {
@@ -168,6 +196,7 @@ pub fn migrate_slot(src: &Node, dst: &Node, slot: usize) {
     src.setslot("NODE", dst.name.clone(), slot);
     dst.setslot("NODE", dst.name.clone(), slot);
 }
+
 #[derive(Clone)]
 pub struct Node {
     pub name: String,
@@ -175,6 +204,7 @@ pub struct Node {
     pub port: String,
     role: Option<Role>,
     pub slaveof: Option<String>,
+    nodes: RefCell<HashMap<String, Node>>,
     slots: RefCell<Vec<usize>>,
     migrating: HashMap<usize, String>,
     importing: HashMap<usize, String>,
@@ -207,6 +237,7 @@ impl Node {
                 port: port.to_string(),
                 ip: ip.to_string(),
                 slaveof: None,
+                nodes: RefCell::new(HashMap::new()),
                 slots: RefCell::new(vec![]),
                 migrating: HashMap::new(),
                 importing: HashMap::new(),
@@ -223,17 +254,35 @@ impl Node {
             }
         }
     }
+
+    pub fn fix_node(&self) {
+        for (slot, nodeid) in &self.migrating {
+            let target = self.nodes.borrow().get(nodeid).cloned().unwrap();
+            if target.importing.contains_key(slot) {
+                migrate_slot(self, &target, *slot);
+                continue;
+            }
+            self.setslot("STABLE", nodeid.to_string(), *slot);
+        }
+        for (slot, nodeid) in &self.importing {
+            let target = self.nodes.borrow().get(nodeid).cloned().unwrap();
+            if target.importing.contains_key(slot) {
+                migrate_slot(self, &target, *slot);
+                continue;
+            }
+            self.setslot("STABLE", nodeid.to_string(), *slot);
+        }
+    }
     pub fn info(&self) -> HashMap<String, String> {
         let mut node_infos = HashMap::new();
-        if let Some(conn) = self.conn.as_ref() {
-            let info: String = redis::cmd("CLUSTER").arg("INFO").query(conn).unwrap();
-            let infos: Vec<String> = info.split("\r\n").map(|x| x.to_string()).collect();
+        let a = self.conn.as_ref().as_ref().unwrap();
+        let info: String = redis::cmd("CLUSTER").arg("INFO").query(a).unwrap();
+        let infos: Vec<String> = info.split("\r\n").map(|x| x.to_string()).collect();
 
-            for mut info in infos.into_iter() {
-                let kv: Vec<String> = info.split(":").map(|x| x.to_string()).collect();
-                if kv.len() == 2 {
-                    node_infos.insert(kv[0].clone(), kv[1].clone());
-                }
+        for mut info in infos.into_iter() {
+            let kv: Vec<String> = info.split(":").map(|x| x.to_string()).collect();
+            if kv.len() == 2 {
+                node_infos.insert(kv[0].clone(), kv[1].clone());
             }
         }
         node_infos
@@ -301,13 +350,13 @@ impl Node {
                         let mut scope: Vec<&str> = content.split("->-").collect();
                         let slot = scope[0].to_string().parse::<usize>().unwrap();
                         let nodeid = scope[1];
-                        migrating.insert(slot, nodeid);
+                        migrating.insert(slot, nodeid.to_string());
                     }
                     if content.contains("-<-") {
                         let mut scope: Vec<&str> = content.split("-<-").collect();
                         let slot = scope[0].to_string().parse::<usize>().unwrap();
                         let nodeid = scope[1];
-                        importing.insert(slot, nodeid);
+                        importing.insert(slot, nodeid.to_string());
                     }
                     let mut scope: Vec<&str> = content.split("-").collect();
                     let start = scope[0].to_string().parse::<usize>().unwrap();
@@ -319,8 +368,13 @@ impl Node {
                         }
                     }
                 }
+                node.migrating = migrating;
+                node.importing = importing;
                 node.slots = RefCell::new(slots);
                 node.name = kv[0].clone();
+                self.nodes
+                    .borrow_mut()
+                    .insert(node.name.clone(), node.clone());
                 nodes.push(node);
             }
             return nodes;
@@ -328,9 +382,6 @@ impl Node {
         vec![]
     }
 
-    pub fn health(&self) -> Result<(), Error> {
-        Ok(())
-    }
     pub fn meet(&self, ip: &str, port: &str) {
         if let Some(conn) = self.conn.as_ref() {
             let _: () = redis::cmd("CLUSTER")

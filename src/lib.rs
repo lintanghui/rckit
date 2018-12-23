@@ -236,5 +236,9 @@ pub fn run() {
         let addr = sub_m.value_of("node").expect("get node err");
         let mut node = Node::new(addr.as_bytes()).unwrap();
         node.connect();
+        let nodes = node.nodes();
+        let cluster = Cluster::new(nodes);
+        cluster.fix_slots();
+        cluster.fill_slots();
     }
 }
