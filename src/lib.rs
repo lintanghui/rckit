@@ -110,18 +110,14 @@ pub fn run() {
         let slave_count = clap::value_t!(sub_m.value_of("replicate"), usize).unwrap();
         let mut master_count = clap::value_t!(sub_m.value_of("master"), usize).unwrap();
         let node: Vec<&str> = sub_m.values_of("node").unwrap().collect();
-        println!(
-            "create cluster with replicate {} node{:?}",
-            slave_count, &node
-        );
         let mut create = Create::new(node, master_count, slave_count).unwrap();
         create.cluster.check().expect("check node err");
         create.init_slots();
         create.add_slots();
         create.set_config_epoch();
         create.join_cluster();
+        println!("wait consistent...");
         while !create.consistent() {
-            eprintln!("wait consistent fail");
             thread::sleep(time::Duration::from_secs(1));
         }
         create.set_slave().expect("set slave err");

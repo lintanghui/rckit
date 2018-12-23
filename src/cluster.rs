@@ -63,17 +63,10 @@ impl Cluster {
         for node in &self.nodes {
             let mut slot_num = 0;
             let nodes = node.nodes();
-            println!("node{:?}  {:?}", node.port, nodes.len());
             for node in nodes.into_iter() {
                 for slot in node.slots.clone().into_inner() {
                     if node_slot.contains_key(&slot) {
                         if node_slot.get(&slot).expect("get slots err").clone() != node.clone() {
-                            println!(
-                                "slot {} want {:?} get {:?}",
-                                slot,
-                                node_slot.get(&slot).unwrap().name,
-                                node.name
-                            );
                             return false;
                         }
                         slot_num = slot_num + 1;
@@ -83,12 +76,12 @@ impl Cluster {
                     }
                 }
             }
-            println!("slot num {}", slot_num);
+
             if slot_num != 16384 {
-                println!("all slots not covered");
                 return false;
             }
         }
+        println!("cluster consistence, all slots coverd");
         true
     }
     pub fn check(&self) -> Result<(), Error> {
@@ -203,6 +196,7 @@ pub struct Node {
     pub ip: String,
     pub port: String,
     role: Option<Role>,
+    myself: Option<bool>,
     pub slaveof: Option<String>,
     nodes: RefCell<HashMap<String, Node>>,
     slots: RefCell<Vec<usize>>,
@@ -237,6 +231,7 @@ impl Node {
                 port: port.to_string(),
                 ip: ip.to_string(),
                 slaveof: None,
+                myself: None,
                 nodes: RefCell::new(HashMap::new()),
                 slots: RefCell::new(vec![]),
                 migrating: HashMap::new(),
@@ -247,7 +242,7 @@ impl Node {
     }
     pub fn connect(&mut self) {
         for node in &self.nodes() {
-            if node.ip == self.ip && node.port == self.port {
+            if *node.myself.as_ref().unwrap() {
                 self.name = node.name.clone();
                 self.slaveof = node.slaveof.clone();
                 self.slots = node.slots.clone();
@@ -341,6 +336,9 @@ impl Node {
                     node.set_role(Role::master);
                 } else {
                     node.set_role(Role::slave);
+                }
+                if kv[2].contains("self") {
+                    node.myself = Some(true);
                 }
                 if kv[3] != "-" {
                     node.slaveof = Some(kv[3].clone());

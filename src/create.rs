@@ -68,7 +68,8 @@ impl Create {
     ) -> Result<Create, Error> {
         let mut nodes = Vec::new();
         for n in addrs.into_iter() {
-            let node = Node::new(n.as_bytes()).unwrap();
+            let mut node = Node::new(n.as_bytes()).unwrap();
+            node.connect();
             nodes.push(node);
         }
         let mut create = Create {
@@ -99,11 +100,19 @@ impl Create {
                 ips.entry(key).or_insert(vec![]).push(n.clone());
             }
             self.master = spread(&mut ips, self.master_count).expect("spread master err");
+            println!("create redis cluster");
+            println!("distribute master");
+            for node in &self.master {
+                println!("master: {:?}", node);
+            }
             self.slots = slpit_slots(CLUSTER_SLOTS, self.master_count).unwrap();
             spread(&mut ips, self.cluster.len() - self.master_count).unwrap()
         };
-        println!("master {:?} slots{:?}", self.master, self.slots);
         self.distribute_slave(slaves);
+        println!("distributie slave");
+        for node in &self.slave {
+            println!("slave: {:?}", node);
+        }
     }
     pub fn add_slots(&mut self) {
         for node in &self.master {
@@ -129,7 +138,6 @@ impl Create {
     }
     pub fn set_slave(&self) -> Result<(), Error> {
         for node in &self.slave {
-            println!("set {} replicate of {:?}", node.port, node.slaveof);
             let _: () = node.set_slave();
         }
         Ok(())
@@ -154,7 +162,6 @@ impl Create {
                     break;
                 }
             }
-            println!("{:?} {}", self.slave, self.slave.len());
             if self.slave.len() >= slaves.len() {
                 break;
             }
