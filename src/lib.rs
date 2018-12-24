@@ -104,7 +104,8 @@ pub fn run() {
                 required(true).
                 takes_value(true),
             ),
-        )
+        ).subcommand(SubCommand::with_name("reshard").about("rebalance slots").arg(Arg::with_name("node")
+        .short("n").required(true).takes_value(true)))
         .get_matches();
     if let Some(sub_m) = matches.subcommand_matches("create") {
         let slave_count = clap::value_t!(sub_m.value_of("replicate"), usize).unwrap();
@@ -236,5 +237,25 @@ pub fn run() {
         let cluster = Cluster::new(nodes);
         cluster.fix_slots();
         cluster.fill_slots();
+    }
+    if let Some(sub_m) = matches.subcommand_matches("reshard") {
+        let addr = sub_m.value_of("node").expect("get node err");
+        let mut node = Node::new(addr.as_bytes()).unwrap();
+        node.connect();
+        let nodes = node.nodes();
+        let mut cluster = Cluster::new(nodes);
+        let mut master: Vec<Node> = cluster
+            .nodes
+            .iter()
+            .filter(|x| x.is_master())
+            .map(|x| x.clone())
+            .collect();
+        let mut slots = vec![];
+        let dist = master.iter().zip(util::divide(master.len(), 16374));
+        for (node, num) in dist {
+            if node.slots().len() > num {
+                slots.push((node, num))
+            }
+        }
     }
 }
