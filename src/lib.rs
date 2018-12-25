@@ -243,19 +243,7 @@ pub fn run() {
         let mut node = Node::new(addr.as_bytes()).unwrap();
         node.connect();
         let nodes = node.nodes();
-        let mut cluster = Cluster::new(nodes);
-        let mut master: Vec<Node> = cluster
-            .nodes
-            .iter()
-            .filter(|x| x.is_master())
-            .map(|x| x.clone())
-            .collect();
-        let mut slots = vec![];
-        let dist = master.iter().zip(util::divide(master.len(), 16374));
-        for (node, num) in dist {
-            if node.slots().len() > num {
-                slots.push((node, num))
-            }
-        }
+        let cluster = Cluster::new(nodes);
+        cluster.reshard();
     }
 }

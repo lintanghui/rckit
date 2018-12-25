@@ -175,6 +175,36 @@ impl Cluster {
             master.fix_node();
         }
     }
+    pub fn reshard(&self) {
+        let master: Vec<Node> = self
+            .nodes
+            .iter()
+            .filter(|x| x.is_master())
+            .map(|x| x.clone())
+            .collect();
+        let mut slots = vec![];
+        let dist: Vec<(Node, usize)> = master
+            .iter()
+            .map(|x| x.clone())
+            .zip(util::divide(master.len(), 16384))
+            .collect();
+        for (node, num) in &dist {
+            let delta = node.slots.borrow().len() - num;
+            if delta > 0 {
+                for _i in 0..delta {
+                    slots.push((node.clone(), node.slots.borrow_mut().pop().unwrap()))
+                }
+            }
+        }
+        for (node, num) in &dist {
+            let mut delta = node.slots.borrow().len() as i64 - *num as i64;
+            while delta < 0 {
+                let (src, slot) = slots.pop().unwrap();
+                migrate_slot(&src, node, slot);
+                delta += 1;
+            }
+        }
+    }
 }
 
 pub fn migrate_slot(src: &Node, dst: &Node, slot: usize) {
