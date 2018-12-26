@@ -1,4 +1,4 @@
-use cluster::{Cluster, Error, Node, Role};
+use cluster::{Cluster, Error, Node};
 use std::collections::HashMap;
 use util;
 #[test]

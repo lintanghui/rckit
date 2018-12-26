@@ -26,8 +26,8 @@ fn test_consistency() {
 }
 #[derive(Debug, PartialEq, Clone)]
 pub enum Role {
-    master,
-    slave,
+    Master,
+    Slave,
 }
 
 impl PartialEq for Node {
@@ -100,7 +100,7 @@ impl Cluster {
             let nodes: Vec<&Node> = self
                 .nodes
                 .iter()
-                .filter(|&x| x.role == Some(Role::master) && x.name != del_node.name)
+                .filter(|&x| x.role == Some(Role::Master) && x.name != del_node.name)
                 .collect();
             let slots = del_node.slots.borrow();
             let slot_count = slots.len();
@@ -160,6 +160,9 @@ impl Cluster {
         let mut idx = 0;
         for node in self.nodes.iter().filter(|x| x.is_master()) {
             let num = dist.pop().unwrap();
+            if num == 0 {
+                continue;
+            }
             let slots = &miss[idx..idx + num];
             node.add_slots(slots);
             idx += num;
@@ -283,7 +286,7 @@ impl Node {
                 migrate_slot(self, &target, *slot);
                 continue;
             }
-            self.setslot("STABLE", nodeid.to_string(), *slot);
+            self.setslot_stable(*slot);
         }
         for (slot, nodeid) in &self.importing {
             let target = self.nodes.borrow().get(nodeid).cloned().unwrap();
@@ -291,7 +294,7 @@ impl Node {
                 migrate_slot(self, &target, *slot);
                 continue;
             }
-            self.setslot("STABLE", nodeid.to_string(), *slot);
+            self.setslot_stable(*slot);
         }
     }
     pub fn info(&self) -> HashMap<String, String> {
@@ -359,9 +362,9 @@ impl Node {
                 let addr = kv[1].split('@').next().expect("must contain addr");
                 let mut node = Node::new(addr.as_bytes()).unwrap();
                 if kv[2].contains("master") {
-                    node.set_role(Role::master);
+                    node.set_role(Role::Master);
                 } else {
-                    node.set_role(Role::slave);
+                    node.set_role(Role::Slave);
                 }
                 if kv[2].contains("self") {
                     node.myself = Some(true);
@@ -371,24 +374,27 @@ impl Node {
                 }
                 for content in &kv[8..] {
                     if content.contains("->-") {
-                        let mut scope: Vec<&str> = content.split("->-").collect();
+                        let migrate = &content[1..content.len() - 1];
+                        let mut scope: Vec<&str> = migrate.split("->-").collect();
                         let slot = scope[0].to_string().parse::<usize>().unwrap();
                         let nodeid = scope[1];
                         migrating.insert(slot, nodeid.to_string());
-                    }
-                    if content.contains("-<-") {
-                        let mut scope: Vec<&str> = content.split("-<-").collect();
+                    } else if content.contains("-<-") {
+                        // trim [ ]
+                        let migrate = &content[1..content.len() - 1];
+                        let mut scope: Vec<&str> = migrate.split("-<-").collect();
                         let slot = scope[0].to_string().parse::<usize>().unwrap();
                         let nodeid = scope[1];
                         importing.insert(slot, nodeid.to_string());
-                    }
-                    let mut scope: Vec<&str> = content.split("-").collect();
-                    let start = scope[0].to_string().parse::<usize>().unwrap();
-                    slots.push(start);
-                    if scope.len() == 2 {
-                        let end = scope[1].to_string().parse::<usize>().unwrap();
-                        for i in (start + 1..end + 1).into_iter() {
-                            slots.push(i);
+                    } else {
+                        let mut scope: Vec<&str> = content.split("-").collect();
+                        let start = scope[0].to_string().parse::<usize>().unwrap();
+                        slots.push(start);
+                        if scope.len() == 2 {
+                            let end = scope[1].to_string().parse::<usize>().unwrap();
+                            for i in (start + 1..end + 1).into_iter() {
+                                slots.push(i);
+                            }
                         }
                     }
                 }
@@ -420,7 +426,7 @@ impl Node {
         self.slots.clone().into_inner()
     }
     pub fn is_master(&self) -> bool {
-        self.role == Some(Role::master)
+        self.role == Some(Role::Master)
     }
     pub fn forget(&self, node: &Node) {
         if let Some(conn) = self.conn.as_ref() {
@@ -438,6 +444,16 @@ impl Node {
                 .arg(slot)
                 .arg(state)
                 .arg(&*nodeid)
+                .query(conn)
+                .unwrap();
+        }
+    }
+    fn setslot_stable(&self, slot: usize) {
+        if let Some(conn) = self.conn.as_ref() {
+            let _: () = redis::cmd("CLUSTER")
+                .arg("SETSLOT")
+                .arg(slot)
+                .arg("STABLE")
                 .query(conn)
                 .unwrap();
         }
@@ -474,7 +490,6 @@ impl Node {
 }
 #[derive(Debug)]
 pub enum Error {
-    None,
     BadAddr,
     BadCluster,
 }

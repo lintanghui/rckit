@@ -24,7 +24,7 @@ impl Add {
             if ms.len() == 1 {
                 let slave_host = ms.pop().unwrap();
                 let mut node = Node::new(slave_host.as_bytes()).expect("create new node fail");
-                node.set_role(Role::slave);
+                node.set_role(Role::Slave);
                 nodes.push(node);
                 sm.insert(slave_host.to_string(), master_host.to_string());
             }

@@ -122,6 +122,7 @@ pub fn run() {
             thread::sleep(time::Duration::from_secs(1));
         }
         create.set_slave().expect("set slave err");
+        return;
     }
     if let Some(sub_m) = matches.subcommand_matches("add") {
         let cluster = sub_m
@@ -144,6 +145,7 @@ pub fn run() {
             thread::sleep(time::Duration::from_secs(1));
         }
         add.set_slave();
+        return;
     }
     if let Some(sub_m) = matches.subcommand_matches("delete") {
         let newnodes: Vec<&str> = sub_m
@@ -163,6 +165,7 @@ pub fn run() {
             println!("delete node {:?}", del_node);
             cluster.delete_node(del_node);
         }
+        return;
     }
     if let Some(sub_m) = matches.subcommand_matches("migrate") {
         let arg = (
@@ -230,6 +233,7 @@ pub fn run() {
             }
             _ => println!("err"),
         }
+        return;
     }
     if let Some(sub_m) = matches.subcommand_matches("fix") {
         let addr = sub_m.value_of("node").expect("get node err");
@@ -239,6 +243,7 @@ pub fn run() {
         let cluster = Cluster::new(nodes);
         cluster.fix_slots();
         cluster.fill_slots();
+        return;
     }
     if let Some(sub_m) = matches.subcommand_matches("reshard") {
         let addr = sub_m.value_of("node").expect("get node err");
@@ -247,5 +252,8 @@ pub fn run() {
         let nodes = node.nodes();
         let cluster = Cluster::new(nodes);
         cluster.reshard();
+        return;
     }
+
+    println!("{}", matches.usage())
 }
