@@ -18,7 +18,8 @@ impl Add {
         for n in addrs.into_iter() {
             let mut ms: Vec<&str> = n.split(",").collect();
             let master_host = ms.pop().unwrap();
-            let master = Node::new(master_host.as_bytes()).expect("create new node fail");
+            let mut master = Node::new(master_host.as_bytes()).expect("create new node fail");
+            master.connect();
             nodes.push(master);
             if ms.len() == 1 {
                 let slave_host = ms.pop().unwrap();

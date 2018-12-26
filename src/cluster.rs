@@ -40,8 +40,8 @@ impl fmt::Debug for Node {
         let slot_num = self.slots.borrow().len();
         write!(
             f,
-            "Node{{name: {:?} ,ip: {},port: {},slots: {},role:{:?},slaveof:{:?} }}",
-            self.name, self.ip, self.port, slot_num, self.role, self.slaveof
+            "Node{{name: {:?} ,ip: {},port: {},slots: {},self:{:?},role:{:?},slaveof:{:?} }}",
+            self.name, self.ip, self.port, slot_num, self.myself, self.role, self.slaveof
         )
     }
 }
@@ -159,11 +159,6 @@ impl Cluster {
         let mut dist = util::divide(miss.len(), self.nodes.len());
         let mut idx = 0;
         for node in self.nodes.iter().filter(|x| x.is_master()) {
-            // let slot = miss
-            //     .iter()
-            //     .map(|x| x.clone())
-            //     .take(dist.pop().unwrap())
-            //     .collect::<Vec<usize>>();
             let num = dist.pop().unwrap();
             let slots = &miss[idx..idx + num];
             node.add_slots(slots);
@@ -186,10 +181,10 @@ impl Cluster {
         let dist: Vec<(Node, usize)> = master
             .iter()
             .map(|x| x.clone())
-            .zip(util::divide(master.len(), 16384))
+            .zip(util::divide(16384, master.len()))
             .collect();
         for (node, num) in &dist {
-            let delta = node.slots.borrow().len() - num;
+            let delta = node.slots.borrow().len() as i64 - *num as i64;
             if delta > 0 {
                 for _i in 0..delta {
                     slots.push((node.clone(), node.slots.borrow_mut().pop().unwrap()))
@@ -271,8 +266,9 @@ impl Node {
         }
     }
     pub fn connect(&mut self) {
-        for node in &self.nodes() {
-            if *node.myself.as_ref().unwrap() {
+        let nodes = self.nodes();
+        for node in &nodes {
+            if let Some(_t) = node.myself {
                 self.name = node.name.clone();
                 self.slaveof = node.slaveof.clone();
                 self.slots = node.slots.clone();

@@ -170,17 +170,9 @@ pub fn run() {
             sub_m.value_of("dst"),
             clap::value_t!(sub_m.value_of("count"), usize),
         );
-        let migrate = |src: &Node, dst: &Node, count| {
-            let slots = src.slots();
-            let mut i = 0;
-            loop {
-                let slot = slots[i];
-
-                i += 1;
-                cluster::migrate_slot(&src, dst, slot);
-                if i >= count {
-                    return;
-                }
+        let migrate = |src: &Node, dst: &Node, count: &[usize]| {
+            for slot in count {
+                cluster::migrate_slot(&src, dst, *slot)
             }
         };
         match arg {
@@ -189,19 +181,27 @@ pub fn run() {
                 let mut dst_node = Node::new(dst.as_bytes()).unwrap();
                 src_node.connect();
                 dst_node.connect();
-                migrate(&mut src_node, &dst_node, count)
+                let slots = src_node.slots();
+                migrate(&mut src_node, &dst_node, &slots[..count])
             }
             (Some(src), _, Ok(count)) => {
                 let mut src_node = Node::new(src.as_bytes()).unwrap();
                 src_node.connect();
+                let src_name = src_node.name.clone();
                 let masters: Vec<Node> = src_node
                     .nodes()
                     .into_iter()
-                    .filter(|x| x.is_master())
+                    .filter(|x| x.is_master() && x.name != src_name)
                     .collect();
-                let mut slots = util::divide(count, masters.len());
+                let mut dist = util::divide(count, masters.len());
+                let mut idx = 0;
+                let mut slots = src_node.slots();
+
                 for master in masters.into_iter() {
-                    migrate(&mut src_node, &master, slots.pop().unwrap());
+                    let num = dist.pop().unwrap();
+                    let migra = &slots[idx..idx + num];
+                    migrate(&mut src_node, &master, migra);
+                    idx += num;
                 }
             }
             (Some(src), Some(dst), Err(_)) => {
@@ -209,25 +209,27 @@ pub fn run() {
                 let mut dst_node = Node::new(dst.as_bytes()).unwrap();
                 src_node.connect();
                 dst_node.connect();
-                let count = src_node.slots().len();
-                migrate(&mut src_node, &dst_node, count);
+                let slots = src_node.slots();
+                migrate(&mut src_node, &dst_node, &slots[..])
             }
             (None, Some(dst), Ok(count)) => {
                 let mut dst_node = Node::new(dst.as_bytes()).unwrap();
+                let dst_name = dst_node.name.clone();
                 let mut masters: Vec<Node> = dst_node
                     .nodes()
                     .clone()
                     .into_iter()
-                    .filter(|x| x.is_master())
+                    .filter(|x| x.is_master() && x.name != dst_name)
                     .collect();
                 let mut slots = util::divide(count, masters.len());
                 for master in masters {
-                    migrate(&master, &dst_node, slots.pop().unwrap())
+                    let num = slots.pop().unwrap();
+                    let slot = master.slots();
+                    migrate(&master, &dst_node, &slot[..num])
                 }
             }
-
             _ => println!("err"),
-        };
+        }
     }
     if let Some(sub_m) = matches.subcommand_matches("fix") {
         let addr = sub_m.value_of("node").expect("get node err");
