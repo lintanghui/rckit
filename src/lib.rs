@@ -1,3 +1,4 @@
+#![allow(clippy::let_unit_value)]
 extern crate clap;
 extern crate redis;
 
@@ -11,7 +12,9 @@ use clap::{App, Arg, SubCommand};
 use cluster::{Cluster, Node};
 use create::Create;
 use std::{thread, time};
+
 pub fn run() {
+
     let matches = App::new("rckit")
         .about("redis cluster tool")
         .subcommand(
@@ -107,6 +110,7 @@ pub fn run() {
         ).subcommand(SubCommand::with_name("reshard").about("rebalance slots").arg(Arg::with_name("node")
         .short("n").required(true).takes_value(true)))
         .get_matches();
+
     if let Some(sub_m) = matches.subcommand_matches("create") {
         let slave_count = clap::value_t!(sub_m.value_of("replicate"), usize).unwrap();
         let mut master_count = clap::value_t!(sub_m.value_of("master"), usize).unwrap();
@@ -124,6 +128,7 @@ pub fn run() {
         create.set_slave().expect("set slave err");
         return;
     }
+
     if let Some(sub_m) = matches.subcommand_matches("add") {
         let cluster = sub_m
             .value_of("cluster")
@@ -147,6 +152,7 @@ pub fn run() {
         add.set_slave();
         return;
     }
+
     if let Some(sub_m) = matches.subcommand_matches("delete") {
         let newnodes: Vec<&str> = sub_m
             .values_of("node")
@@ -167,6 +173,7 @@ pub fn run() {
         }
         return;
     }
+
     if let Some(sub_m) = matches.subcommand_matches("migrate") {
         let arg = (
             sub_m.value_of("src"),
@@ -235,6 +242,7 @@ pub fn run() {
         }
         return;
     }
+
     if let Some(sub_m) = matches.subcommand_matches("fix") {
         let addr = sub_m.value_of("node").expect("get node err");
         let mut node = Node::new(addr.as_bytes()).unwrap();
@@ -245,6 +253,7 @@ pub fn run() {
         cluster.fill_slots();
         return;
     }
+
     if let Some(sub_m) = matches.subcommand_matches("reshard") {
         let addr = sub_m.value_of("node").expect("get node err");
         let mut node = Node::new(addr.as_bytes()).unwrap();

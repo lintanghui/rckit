@@ -1,6 +1,7 @@
 use cluster::{Cluster, Error, Node};
 use std::collections::HashMap;
 use util;
+
 #[test]
 fn test_cluster() {
     let mut addrs: Vec<&str> = Vec::new();
@@ -23,6 +24,7 @@ fn test_cluster() {
     println!("{:?}", cluster.slave.pop());
     println!("{:?}", cluster.slave.pop());
 }
+
 #[test]
 fn test_split_slots() {
     let mut res = slpit_slots(100, 3).unwrap();
@@ -61,6 +63,7 @@ pub struct Create {
 const CLUSTER_SLOTS: usize = 16384;
 
 impl Create {
+
     pub fn new(
         addrs: Vec<&str>,
         mut master_count: usize,
@@ -97,7 +100,7 @@ impl Create {
             let mut ips = HashMap::new();
             for n in &self.cluster.nodes {
                 let key = &*n.ip;
-                ips.entry(key).or_insert(vec![]).push(n.clone());
+                ips.entry(key).or_insert_with(|| vec![]).push(n.clone());
             }
             self.master = spread(&mut ips, self.master_count).expect("spread master err");
             println!("create redis cluster");
@@ -114,10 +117,11 @@ impl Create {
             println!("slave: {:?}", node);
         }
     }
+
     pub fn add_slots(&mut self) {
         for node in &self.master {
             let chunk = &self.slots.pop().unwrap();
-            node.add_slots(&(chunk.0..chunk.1).into_iter().collect::<Vec<usize>>());
+            node.add_slots(&(chunk.0..chunk.1).collect::<Vec<usize>>());
         }
     }
 
@@ -127,6 +131,7 @@ impl Create {
             node.set_config_epoch(epoch);
         }
     }
+
     pub fn join_cluster(&mut self) {
         if self.cluster.len() == 0 {
             return;
@@ -136,12 +141,14 @@ impl Create {
             first_node.meet(&*node.ip, &*node.port);
         }
     }
+
     pub fn set_slave(&self) -> Result<(), Error> {
         for node in &self.slave {
             let _: () = node.set_slave();
         }
         Ok(())
     }
+
     fn distribute_slave(&mut self, slaves: Vec<Node>) {
         let mut inuse = HashMap::new();
         loop {
@@ -150,7 +157,7 @@ impl Create {
                     // if master.ip == slave.ip {
                     //     continue;
                     // }
-                    let mut key = String::from(slave.ip.clone() + ":" + &slave.port);
+                    let mut key = slave.ip.clone() + ":" + &slave.port;
                     if inuse.contains_key(&key) {
                         continue;
                     }
@@ -167,6 +174,7 @@ impl Create {
             }
         }
     }
+
     pub fn consistent(&self) -> bool {
         self.cluster.consistency()
     }
@@ -178,13 +186,14 @@ pub fn slpit_slots(n: usize, m: usize) -> Option<Vec<Chunk>> {
     let mut total: usize = 0;
     for num in chunks.into_iter() {
         res.push(Chunk(total, total + num));
-        total = total + num;
+        total += num;
     }
     Some(res)
 }
 
 #[derive(Debug)]
 pub struct Chunk(usize, usize);
+
 impl PartialEq for Chunk {
     fn eq(&self, other: &Chunk) -> bool {
         self.0 == other.0 && self.1 == other.1
@@ -195,8 +204,8 @@ fn spread(nodes: &mut HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {
     let mut target: Vec<Node> = Vec::new();
     let len = {
         let mut len: usize = 0;
-        for (_, v) in nodes.into_iter() {
-            len = len + v.len()
+        for (_, v) in nodes.iter_mut() {
+            len += v.len()
         }
         len
     };
@@ -204,7 +213,7 @@ fn spread(nodes: &mut HashMap<&str, Vec<Node>>, n: usize) -> Option<Vec<Node>> {
         return None;
     }
     loop {
-        for (_, v) in nodes.into_iter() {
+        for (_, v) in nodes.iter_mut() {
             if target.len() >= n {
                 return Some(target);
             }
