@@ -1,3 +1,4 @@
+
 pub fn divide(n: usize, m: usize) -> Vec<usize> {
     let avg = n / m;
     let remain = n % m;
@@ -9,7 +10,7 @@ pub fn divide(n: usize, m: usize) -> Vec<usize> {
         } else {
             c.push(avg);
         }
-        i = i + 1;
+        i += 1;
     }
     c
 }

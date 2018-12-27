@@ -55,9 +55,11 @@ impl Cluster {
     pub fn new(nodes: Vec<Node>) -> Cluster {
         Cluster { nodes }
     }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
+
     pub fn consistency(&self) -> bool {
         let mut node_slot: HashMap<usize, Node> = HashMap::new();
         for node in &self.nodes {
@@ -65,15 +67,11 @@ impl Cluster {
             let nodes = node.nodes();
             for node in nodes.into_iter() {
                 for slot in node.slots.clone().into_inner() {
-                    if node_slot.contains_key(&slot) {
-                        if node_slot.get(&slot).expect("get slots err").clone() != node.clone() {
-                            return false;
-                        }
-                        slot_num = slot_num + 1;
-                    } else {
-                        slot_num = slot_num + 1;
-                        node_slot.insert(slot.clone(), node.clone());
+                    let sv = node_slot.entry(slot).or_insert_with(|| node.clone());
+                    if *sv != node {
+                        return false;
                     }
+                    slot_num += 1;
                 }
             }
 
@@ -84,6 +82,7 @@ impl Cluster {
         println!("cluster consistence, all slots coverd");
         true
     }
+
     pub fn check(&self) -> Result<(), Error> {
         for node in &self.nodes {
             let nodes_info = node.info();
@@ -114,7 +113,7 @@ impl Cluster {
                 for slot in migrate.iter() {
                     migrate_slot(del_node, node, *slot);
                 }
-                start = start + count;
+                start += count;
                 println!("stop migrate from {:?} to {:?}", del_node, node);
             }
         }
@@ -137,12 +136,13 @@ impl Cluster {
 
     pub fn node(&self, node: &str) -> Option<&Node> {
         for n in &self.nodes {
-            if &n.addr() == node {
+            if n.addr() == node {
                 return Some(n);
             }
         }
         None
     }
+
     pub fn fill_slots(&self) {
         let slots: HashSet<usize> = self
             .nodes
@@ -151,7 +151,7 @@ impl Cluster {
             .map(|x| x.slots.clone().into_inner())
             .flatten()
             .collect();
-        let all_slots: HashSet<usize> = (1..16384).into_iter().collect();
+        let all_slots: HashSet<usize> = (1..16384).collect();
         let miss = all_slots
             .difference(&slots)
             .cloned()
@@ -168,22 +168,24 @@ impl Cluster {
             idx += num;
         }
     }
+
     pub fn fix_slots(&self) {
         for master in self.nodes.iter().filter(|x| x.is_master()) {
             master.fix_node();
         }
     }
+
     pub fn reshard(&self) {
         let master: Vec<Node> = self
             .nodes
             .iter()
             .filter(|x| x.is_master())
-            .map(|x| x.clone())
+            .cloned()
             .collect();
         let mut slots = vec![];
         let dist: Vec<(Node, usize)> = master
             .iter()
-            .map(|x| x.clone())
+            .cloned()
             .zip(util::divide(16384, master.len()))
             .collect();
         for (node, num) in &dist {
@@ -208,11 +210,8 @@ impl Cluster {
 pub fn migrate_slot(src: &Node, dst: &Node, slot: usize) {
     dst.setslot("IMPORTING", src.name.clone(), slot);
     src.setslot("MIGRATING", dst.name.clone(), slot);
-    loop {
-        match src.keysinslot(slot) {
-            Some(key) => src.migrate(&*dst.ip, &*dst.port, key),
-            None => break,
-        }
+    while let Some(key) = src.keysinslot(slot) {
+        src.migrate(&*dst.ip, &*dst.port, key);
     }
     src.setslot("NODE", dst.name.clone(), slot);
     dst.setslot("NODE", dst.name.clone(), slot);
@@ -232,6 +231,7 @@ pub struct Node {
     importing: HashMap<usize, String>,
     conn: Rc<Option<Connection>>,
 }
+
 impl Node {
     pub fn new(addr: &[u8]) -> AsResult<Node> {
         let content = String::from_utf8_lossy(addr);
@@ -268,6 +268,7 @@ impl Node {
             })
         }
     }
+
     pub fn connect(&mut self) {
         let nodes = self.nodes();
         for node in &nodes {
@@ -297,6 +298,7 @@ impl Node {
             self.setslot_stable(*slot);
         }
     }
+
     pub fn info(&self) -> HashMap<String, String> {
         let mut node_infos = HashMap::new();
         let a = self.conn.as_ref().as_ref().unwrap();
@@ -304,16 +306,18 @@ impl Node {
         let infos: Vec<String> = info.split("\r\n").map(|x| x.to_string()).collect();
 
         for mut info in infos.into_iter() {
-            let kv: Vec<String> = info.split(":").map(|x| x.to_string()).collect();
+            let kv: Vec<String> = info.split(':').map(|x| x.to_string()).collect();
             if kv.len() == 2 {
                 node_infos.insert(kv[0].clone(), kv[1].clone());
             }
         }
         node_infos
     }
+
     pub fn set_role(&mut self, role: Role) {
         self.role = Some(role);
     }
+
     pub fn set_slave(&self) {
         let node_id = self.slaveof.clone().unwrap();
         println!("set {}  replicate to {}", self.ip, node_id);
@@ -325,9 +329,11 @@ impl Node {
                 .expect("cluster replicate err");
         }
     }
+
     pub fn addr(&self) -> String {
         self.ip.clone() + ":" + &*self.port
     }
+
     pub fn add_slots(&self, slots: &[usize]) {
         if let Some(conn) = self.conn.as_ref() {
             let _: () = redis::cmd("cluster")
@@ -337,6 +343,7 @@ impl Node {
                 .expect("add slots err");
         }
     }
+
     pub fn set_config_epoch(&self, epoch: usize) {
         if let Some(conn) = self.conn.as_ref() {
             let _: () = redis::cmd("CLUSTER")
@@ -346,13 +353,14 @@ impl Node {
                 .expect("set config epoch err");
         }
     }
+
     pub fn nodes(&self) -> Vec<Node> {
         if let Some(conn) = self.conn.as_ref() {
             let info: String = redis::cmd("CLUSTER").arg("NODES").query(conn).unwrap();
             // let infos: Vec<String> = info.split("\n").map(|x| x.to_string()).collect();
             let mut nodes: Vec<Node> = Vec::new();
             for mut info in info.lines() {
-                let kv: Vec<String> = info.split(" ").map(|x| x.to_string()).collect();
+                let kv: Vec<String> = info.split(' ').map(|x| x.to_string()).collect();
                 if kv.len() < 8 {
                     return vec![];
                 }
@@ -387,12 +395,12 @@ impl Node {
                         let nodeid = scope[1];
                         importing.insert(slot, nodeid.to_string());
                     } else {
-                        let mut scope: Vec<&str> = content.split("-").collect();
+                        let mut scope: Vec<&str> = content.split('-').collect();
                         let start = scope[0].to_string().parse::<usize>().unwrap();
                         slots.push(start);
                         if scope.len() == 2 {
                             let end = scope[1].to_string().parse::<usize>().unwrap();
-                            for i in (start + 1..end + 1).into_iter() {
+                            for i in start + 1..=end {
                                 slots.push(i);
                             }
                         }
@@ -422,12 +430,15 @@ impl Node {
                 .unwrap();
         }
     }
+
     pub fn slots(&self) -> Vec<usize> {
         self.slots.clone().into_inner()
     }
+
     pub fn is_master(&self) -> bool {
         self.role == Some(Role::Master)
     }
+
     pub fn forget(&self, node: &Node) {
         if let Some(conn) = self.conn.as_ref() {
             let _: () = redis::cmd("CLUSTER")
@@ -437,6 +448,7 @@ impl Node {
                 .unwrap();
         }
     }
+
     pub fn setslot(&self, state: &str, nodeid: String, slot: usize) {
         if let Some(conn) = self.conn.as_ref() {
             let _: () = redis::cmd("CLUSTER")
@@ -458,6 +470,7 @@ impl Node {
                 .unwrap();
         }
     }
+
     fn keysinslot(&self, slot: usize) -> Option<Vec<String>> {
         if let Some(conn) = self.conn.as_ref() {
             let result: Vec<String> = redis::cmd("CLUSTER")
@@ -466,12 +479,13 @@ impl Node {
                 .arg(100)
                 .query(conn)
                 .unwrap();
-            if result.len() > 0 {
+            if result.is_empty() {
                 return Some(result);
             }
         }
-        return None;
+        None
     }
+
     fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {
         println!("migrate keys {:?}", key);
         if let Some(conn) = self.conn.as_ref() {
@@ -488,9 +502,11 @@ impl Node {
         }
     }
 }
+
 #[derive(Debug)]
 pub enum Error {
     BadAddr,
     BadCluster,
 }
+
 pub type AsResult<T> = result::Result<T, Error>;

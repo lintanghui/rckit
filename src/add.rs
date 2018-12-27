@@ -16,7 +16,7 @@ impl Add {
         let mut nodes = Vec::new();
         let mut sm = HashMap::new();
         for n in addrs.into_iter() {
-            let mut ms: Vec<&str> = n.split(",").collect();
+            let mut ms: Vec<&str> = n.split(',').collect();
             let master_host = ms.pop().unwrap();
             let mut master = Node::new(master_host.as_bytes()).expect("create new node fail");
             master.connect();
@@ -33,7 +33,7 @@ impl Add {
             origin,
             slave_master: sm,
             cluster: Cluster::new(nodes),
-            node: node,
+            node,
         })
     }
     pub fn add_node(&self) -> Result<(), Error> {
@@ -51,7 +51,7 @@ impl Add {
         println!("s_m info {:?}", self.slave_master);
         for node in self.cluster.nodes.iter_mut() {
             if self.slave_master.contains_key(&*node.addr()) {
-                let master = self.slave_master.get(&node.addr()).unwrap();
+                let master = &self.slave_master[&node.addr()];
                 let master_node = nodes_info.get(master);
                 node.slaveof = Some(master_node.unwrap().clone().name);
                 let _: () = node.set_slave();
