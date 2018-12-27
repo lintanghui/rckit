@@ -8,7 +8,7 @@ repository = "https://github.com/lintanghui/rckit"
 documentation = "https://docs.rs/rckit/"
 
 [dependencies]
-clap="2.23.0"
+clap = {version = "2.32", features = ["yaml"]}
 redis="0.9.0"
 [lib]
 name="rckit"

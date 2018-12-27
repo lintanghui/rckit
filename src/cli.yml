@@ -1,0 +1,114 @@
+name: rckit
+version: "0.1.0"
+author: lintanghui <lintanghui@bilibili.com>,wayslog <zxs867179@gmail.com>
+about: redis cluster management tool
+subcommands:
+    - create:
+        about: create redis cluster
+        version: "0.1.0"
+        author: lintanghui <lintanghui@bilibili.com>
+        args:
+          - node:
+              short: n
+              help: "all cluster nodes format as '127.0.0.1:8000 127.0.0.1:80001'"
+              required: true
+              multiple: true
+              takes_value: true
+          - replicate:
+              short: s
+              default_value: "1"
+              help: set slave replicate numbers
+          - master:
+              short: m
+              default_value: "0"
+              takes_value: true
+              help: master numbers
+
+    - add:
+        about: add node into a existing cluster
+        version: "0.1.0"
+        author: lintanghui <lintanghui@bilibili.com>
+        args:
+          - cluster:
+              short: c
+              required: true
+              help: "-c clusterip:port, spec cluster ip and  port"
+              takes_value: true
+          - node:
+              short: n
+              help: "which node need to add to cluster"
+              takes_value: true
+
+    - delete:
+        about: "delete node from cluster.if node is a master,it will migrate slots to other node and delete is's slave too"
+        version: "0.1.0"
+        author: lintanghui <lintanghui@bilibili.com>
+        args:
+          - node:
+              short: n
+              required: true
+              takes_value: true
+              help: "-n <node> delete node from the cluster"
+    - migrate:
+        about: "migrate slots from src to dst"
+        version: "0.1.0"
+        author: lintanghui <lintanghui@bilibili.com>
+        args:
+          - dst:
+              short: d
+              help: "-d <node>"
+              takes_value: true
+              required: true
+          - src:
+              short: s
+              help: "-s <node>"
+              takes_value: true
+              required: true
+          - count:
+              short: c
+              help: "-c count"
+              takes_value: true
+              required: true
+    - fix:
+        about: "fix the cluster"
+        version: "0.1.0"
+        author: lintanghui <lintanghui@bilibili.com>
+        args:
+          - node:
+              short: n
+              required: true
+              takes_value: true
+    - reshard:
+        about: "rebalance slots"
+        version: "0.1.0"
+        author: lintanghui <lintanghui@bilibili.com>
+        args:
+          - node:
+              short: n
+              required: true
+              takes_value: true
+              help: "-n <node>"
+    - report:
+        about: "collect all cluster nodes info and report it"
+        version: "0.1.0"
+        author: wayslog <zxs867179@gmail.com>
+        args:
+          - node:
+              short: n
+              required: true
+              help: "-n <node>"
+              takes_value: true
+          - output:
+              short: o
+              default_value: "stdout"
+              help: "-o default is stdout. Otherwise may output to the file"
+              takes_value: true
+          - column:
+              short: c
+              default_value: "addr,role,used,max,ops"
+              help: "-f may filter the output: addr,pid,role,used,max,clients,ops,cmds,conns,version"
+              takes_value: true
+          - format:
+              short: f
+              default_value: "csv"
+              help: "-f may change the output format as csv/json"
