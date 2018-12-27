@@ -1,3 +1,4 @@
+#![deny(warnings)]
 #![allow(clippy::let_unit_value)]
 extern crate clap;
 extern crate redis;
