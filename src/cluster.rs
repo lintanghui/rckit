@@ -208,8 +208,14 @@ impl Cluster {
 }
 
 pub fn migrate_slot(src: &Node, dst: &Node, slot: usize) {
-    dst.setslot("IMPORTING", src.name.clone(), slot);
-    src.setslot("MIGRATING", dst.name.clone(), slot);
+    println!(
+        "migrate slot{:?} from {:?} to {:?}",
+        slot,
+        src.addr(),
+        dst.addr()
+    );
+    dst.setslot("IMPORTING", dst.name.clone(), slot);
+    src.setslot("MIGRATING", src.name.clone(), slot);
     while let Some(key) = src.keysinslot(slot) {
         src.migrate(&*dst.ip, &*dst.port, key);
     }
@@ -480,14 +486,14 @@ impl Node {
                 .query(conn)
                 .unwrap();
             if result.is_empty() {
-                return Some(result);
+                return None;
             }
+            return Some(result);
         }
         None
     }
 
     fn migrate(&self, dstip: &str, dstport: &str, key: Vec<String>) {
-        println!("migrate keys {:?}", key);
         if let Some(conn) = self.conn.as_ref() {
             let _: () = redis::cmd("MIGRATE")
                 .arg(dstip)

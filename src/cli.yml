@@ -50,7 +50,7 @@ subcommands:
               takes_value: true
               help: "-n <node> delete node from the cluster"
     - migrate:
-        about: "migrate slots from src to dst"
+        about: "migrate slots from node to dst"
         version: "0.1.0"
         author: lintanghui <lintanghui@bilibili.com>
         args:
@@ -58,17 +58,22 @@ subcommands:
               short: d
               help: "-d <node>"
               takes_value: true
-              required: true
-          - src:
-              short: s
+              required: false
+          - node:
+              short: n
               help: "-s <node>"
               takes_value: true
-              required: true
+              required: false
           - count:
               short: c
               help: "-c count"
               takes_value: true
-              required: true
+              required: false
+          - slot:
+              short: s
+              help: "-s slot_num"
+              takes_value: true
+              required: false
     - fix:
         about: "fix the cluster"
         version: "0.1.0"

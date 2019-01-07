@@ -16,7 +16,6 @@ use create::Create;
 use std::{thread, time};
 
 pub fn run() {
-
     let yaml = load_yaml!("cli.yml");
     let matches = App::from_yaml(yaml).get_matches();
 
@@ -85,15 +84,28 @@ pub fn run() {
 
     if let Some(sub_m) = matches.subcommand_matches("migrate") {
         let arg = (
-            sub_m.value_of("src"),
+            sub_m.value_of("node"),
             sub_m.value_of("dst"),
             clap::value_t!(sub_m.value_of("count"), usize),
         );
+        let slot = clap::value_t!(sub_m.value_of("slot"), usize);
         let migrate = |src: &Node, dst: &Node, count: &[usize]| {
             for slot in count {
                 cluster::migrate_slot(&src, dst, *slot)
             }
         };
+        if let Ok(slot) = slot {
+            if let (Some(src), Some(dst), _) = arg {
+                let mut src_node = Node::new(src.as_bytes()).unwrap();
+                let mut dst_node = Node::new(dst.as_bytes()).unwrap();
+                src_node.connect();
+                dst_node.connect();
+                return migrate(&mut src_node, &dst_node, &[slot]);
+            } else {
+                println!("{}", matches.usage());
+                return;
+            }
+        }
         match arg {
             (Some(src), Some(dst), Ok(count)) => {
                 let mut src_node = Node::new(src.as_bytes()).unwrap();
